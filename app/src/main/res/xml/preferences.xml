@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="@string/home_screen">
+        <ListPreference
+            app:key="home_grid_columns"
+            app:title="@string/grid_size"
+            app:summary="Columns"
+            app:entries="@array/grid_columns"
+            app:entryValues="@array/grid_column_values"
+            app:defaultValue="4" />
+        
+        <ListPreference
+            app:key="home_grid_rows"
+            app:title="Rows"
+            app:summary="Rows"
+            app:entries="@array/grid_rows"
+            app:entryValues="@array/grid_row_values"
+            app:defaultValue="5" />
+        
+        <ListPreference
+            app:key="icon_size"
+            app:title="@string/icon_size"
+            app:summary="Icon Size"
+            app:entries="@array/icon_sizes"
+            app:entryValues="@array/icon_size_values"
+            app:defaultValue="100" />
+        
+        <SwitchPreferenceCompat
+            app:key="show_icon_labels"
+            app:title="@string/show_labels"
+            app:summary="Show app labels on home screen"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/app_drawer">
+        <ListPreference
+            app:key="drawer_style"
+            app:title="@string/drawer_style"
+            app:summary="Choose drawer style"
+            app:entries="@array/drawer_styles"
+            app:entryValues="@array/drawer_style_values"
+            app:defaultValue="vertical" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/gestures">
+        <ListPreference
+            app:key="swipe_up"
+            app:title="@string/swipe_up"
+            app:entries="@array/gesture_actions"
+            app:entryValues="@array/gesture_action_values"
+            app:defaultValue="app_drawer" />
+        
+        <ListPreference
+            app:key="swipe_down"
+            app:title="@string/swipe_down"
+            app:entries="@array/gesture_actions"
+            app:entryValues="@array/gesture_action_values"
+            app:defaultValue="notifications" />
+        
+        <ListPreference
+            app:key="double_tap"
+            app:title="@string/double_tap"
+            app:entries="@array/gesture_actions"
+            app:entryValues="@array/gesture_action_values"
+            app:defaultValue="none" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/appearance">
+        <ListPreference
+            app:key="scroll_effect"
+            app:title="@string/scroll_effect"
+            app:entries="@array/scroll_effects"
+            app:entryValues="@array/scroll_effect_values"
+            app:defaultValue="none" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/notification_badges">
+        <SwitchPreferenceCompat
+            app:key="show_badges"
+            app:title="Show Badges"
+            app:summary="Display notification badges on app icons"
+            app:defaultValue="true" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/app_drawer">
+        <Preference
+            app:key="hide_apps"
+            app:title="@string/hide_apps"
+            app:summary="Hide apps from app drawer" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/backup_restore">
+        <Preference
+            app:key="backup_settings"
+            app:title="@string/backup_settings"
+            app:summary="Backup your launcher settings" />
+        
+        <Preference
+            app:key="restore_settings"
+            app:title="@string/restore_settings"
+            app:summary="Restore from CyKrome or Nova Launcher backup" />
+    </PreferenceCategory>
+
+</PreferenceScreen>
+

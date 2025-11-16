@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CyKrome Launcher</string>
+    <string name="settings_title">Settings</string>
+    
+    <!-- Home Screen -->
+    <string name="home_screen">Home Screen</string>
+    <string name="grid_size">Grid Size</string>
+    <string name="icon_size">Icon Size</string>
+    <string name="icon_labels">Icon Labels</string>
+    <string name="show_labels">Show Labels</string>
+    <string name="hide_labels">Hide Labels</string>
+    <string name="desktop_padding">Desktop Padding</string>
+    
+    <!-- App Drawer -->
+    <string name="app_drawer">App Drawer</string>
+    <string name="drawer_style">Drawer Style</string>
+    <string name="drawer_tabs">Tabs</string>
+    <string name="hide_apps">Hide Apps</string>
+    <string name="drawer_grid_size">Drawer Grid Size</string>
+    
+    <!-- Dock -->
+    <string name="dock">Dock</string>
+    <string name="dock_icons">Dock Icons</string>
+    <string name="scrollable_dock">Scrollable Dock</string>
+    <string name="dock_size">Dock Size</string>
+    
+    <!-- Folders -->
+    <string name="folders">Folders</string>
+    <string name="folder_style">Folder Style</string>
+    <string name="folder_preview">Folder Preview</string>
+    
+    <!-- Gestures -->
+    <string name="gestures">Gestures</string>
+    <string name="swipe_up">Swipe Up</string>
+    <string name="swipe_down">Swipe Down</string>
+    <string name="double_tap">Double Tap</string>
+    <string name="pinch_in">Pinch In</string>
+    <string name="pinch_out">Pinch Out</string>
+    
+    <!-- Appearance -->
+    <string name="appearance">Appearance</string>
+    <string name="icon_pack">Icon Pack</string>
+    <string name="wallpaper">Wallpaper</string>
+    <string name="theme">Theme</string>
+    
+    <!-- Backup -->
+    <string name="backup_restore">Backup &amp; Restore</string>
+    <string name="backup_settings">Backup Settings</string>
+    <string name="restore_settings">Restore Settings</string>
+    <string name="restore_nova_backup">Restore from Nova Launcher Backup</string>
+    <string name="backup_format_detected">Backup format detected: %1$s</string>
+    
+    <!-- Animations -->
+    <string name="animations">Animations</string>
+    <string name="scroll_effect">Scroll Effect</string>
+    <string name="animation_speed">Animation Speed</string>
+    
+    <!-- Badges -->
+    <string name="notification_badges">Notification Badges</string>
+    <string name="unread_count">Unread Count</string>
+    
+    <!-- Actions -->
+    <string name="none">None</string>
+    <string name="open_app_drawer">Open App Drawer</string>
+    <string name="open_search">Open Search</string>
+    <string name="show_notifications">Show Notifications</string>
+    <string name="expand_notifications">Expand Notifications</string>
+    
+    <!-- Common -->
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="add">Add</string>
+    
+    <!-- Errors -->
+    <string name="error_loading_apps">Error loading apps</string>
+    <string name="error_backup">Error creating backup</string>
+    <string name="error_restore">Error restoring backup</string>
+    
+</resources>
+

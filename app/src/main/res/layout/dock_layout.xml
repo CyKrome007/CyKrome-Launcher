@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.horizontal.scrollview.widget.HorizontalScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/dockScrollView"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_alignParentBottom="true"
+    android:background="#80FFFFFF"
+    android:fadeScrollbars="false"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:id="@+id/dockContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="8dp" />
+
+</androidx.horizontal.scrollview.widget.HorizontalScrollView>
+
