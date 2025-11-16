@@ -1,0 +1,114 @@
+[
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_dock_layout.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/dock_layout.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/xml_preferences.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/xml/preferences.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_item_hide_app.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/item_hide_app.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/xml_appwidget_info.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/xml/appwidget_info.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_fragment_app_drawer.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/fragment_app_drawer.xml"
+    },
+    {
+        "merged": "com.cykrome.launcher.app-merged_res-42:/drawable_search_bar_background_dark.xml.flat",
+        "source": "com.cykrome.launcher.app-main-44:/drawable/search_bar_background_dark.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/drawable_tab_indicator.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/drawable/tab_indicator.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_widget_layout.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/widget_layout.xml"
+    },
+    {
+        "merged": "com.cykrome.launcher.app-merged_res-42:/drawable_search_bar_background.xml.flat",
+        "source": "com.cykrome.launcher.app-main-44:/drawable/search_bar_background.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_fragment_home_screen.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/fragment_home_screen.xml"
+    },
+    {
+        "merged": "com.cykrome.launcher.app-merged_res-42:/drawable_app_icon_background.xml.flat",
+        "source": "com.cykrome.launcher.app-main-44:/drawable/app_icon_background.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_activity_hide_apps.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/activity_hide_apps.xml"
+    },
+    {
+        "merged": "com.cykrome.launcher.app-merged_res-42:/layout_dock_layout.xml.flat",
+        "source": "com.cykrome.launcher.app-main-44:/layout/dock_layout.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/drawable_badge_background.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/drawable/badge_background.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_fragment_search.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/fragment_search.xml"
+    },
+    {
+        "merged": "com.cykrome.launcher.app-merged_res-42:/drawable_dock_background.xml.flat",
+        "source": "com.cykrome.launcher.app-main-44:/drawable/dock_background.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_item_app_icon.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/item_app_icon.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_desktop_page.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/desktop_page.xml"
+    },
+    {
+        "merged": "com.cykrome.launcher.app-merged_res-42:/drawable_dock_background_dark.xml.flat",
+        "source": "com.cykrome.launcher.app-main-44:/drawable/dock_background_dark.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_activity_launcher.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/activity_launcher.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/layout_activity_settings.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/layout/activity_settings.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/xml_file_paths.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/xml/file_paths.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/menu_app_context_menu.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/menu/app_context_menu.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-merged_res-42:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "/home/cykrome/.gradle/daemon/8.5/com.cykrome.launcher.app-main-44:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.cykrome.launcher.app-merged_res-42:/drawable_app_icon_background_dark.xml.flat",
+        "source": "com.cykrome.launcher.app-main-44:/drawable/app_icon_background_dark.xml"
+    },
+    {
+        "merged": "com.cykrome.launcher.app-merged_res-42:/layout_fragment_home_screen.xml.flat",
+        "source": "com.cykrome.launcher.app-main-44:/layout/fragment_home_screen.xml"
+    }
+]

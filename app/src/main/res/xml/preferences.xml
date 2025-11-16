@@ -102,5 +102,17 @@
             app:summary="Restore from CyKrome or Nova Launcher backup" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="Root Features" app:key="root_category">
+        <Preference
+            app:key="root_status"
+            app:title="Root Status"
+            app:summary="Check root availability" />
+        
+        <Preference
+            app:key="grant_permissions"
+            app:title="Grant Permissions (Root)"
+            app:summary="Grant all permissions using root" />
+    </PreferenceCategory>
+
 </PreferenceScreen>
 

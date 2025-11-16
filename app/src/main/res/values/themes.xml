@@ -7,17 +7,26 @@
         <item name="colorSecondary">@color/secondary</item>
         <item name="colorSecondaryVariant">@color/secondary_dark</item>
         <item name="colorOnSecondary">@color/white</item>
-        <item name="android:windowBackground">@color/background</item>
+        <item name="android:windowBackground">@null</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- Text colors that adapt to theme -->
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <!-- Follow system night mode -->
+        <item name="android:forceDarkAllowed">false</item>
     </style>
 
     <style name="Theme.CyKromeLauncher.Transparent" parent="Theme.CyKromeLauncher">
-        <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@null</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowFullscreen">true</item>
+        <!-- Don't use fullscreen to show status bar -->
+        <item name="android:windowFullscreen">false</item>
         <item name="android:windowContentOverlay">@null</item>
+        <!-- Show status bar -->
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>
 

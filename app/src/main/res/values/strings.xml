@@ -80,5 +80,10 @@
     <string name="error_backup">Error creating backup</string>
     <string name="error_restore">Error restoring backup</string>
     
+    <!-- Root -->
+    <string name="root_features">Root Features</string>
+    <string name="root_status">Root Status</string>
+    <string name="grant_permissions">Grant Permissions</string>
+    
 </resources>
 

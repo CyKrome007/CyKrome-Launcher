@@ -107,6 +107,15 @@ class LauncherPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_SHOW_UNREAD_COUNT, true)
         set(value) = prefs.edit().putBoolean(KEY_SHOW_UNREAD_COUNT, value).apply()
     
+    // Helper method to get/set page count
+    fun getInt(key: String, defaultValue: Int): Int {
+        return prefs.getInt(key, defaultValue)
+    }
+    
+    fun putInt(key: String, value: Int) {
+        prefs.edit().putInt(key, value).apply()
+    }
+    
     companion object {
         // Keys - Made public for backup/restore functionality
         const val KEY_HOME_GRID_COLUMNS = "home_grid_columns"

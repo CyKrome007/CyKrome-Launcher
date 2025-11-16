@@ -85,7 +85,7 @@ class SearchFragment : Fragment() {
             }
         }
         
-        adapter = AppIconAdapter(filtered, preferences, requireContext())
+        adapter = AppIconAdapter(filtered.toMutableList(), preferences, requireContext())
         searchResults.adapter = adapter
     }
 }
