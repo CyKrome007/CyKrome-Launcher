@@ -93,24 +93,23 @@ class AppDrawerFragment : Fragment() {
         val appBarLayout = view?.findViewById<com.google.android.material.appbar.AppBarLayout>(R.id.appBarLayout)
         var startY = 0f
         var isDragging = false
+        var velocityTracker: android.view.VelocityTracker? = null
         
         // Helper function to handle swipe down gesture
         val handleSwipeDown = { v: View, event: android.view.MotionEvent, isFromAppBar: Boolean ->
             when (event.action) {
                 android.view.MotionEvent.ACTION_DOWN -> {
-                    // Only start tracking if drawer is at top
-                    if (!drawerPager.canScrollVertically(-1)) {
-                        startY = event.y
-                        isDragging = false
-                        false
-                    } else {
-                        false
-                    }
+                    startY = event.y
+                    isDragging = false
+                    velocityTracker = android.view.VelocityTracker.obtain()
+                    velocityTracker?.addMovement(event)
+                    false
                 }
                 android.view.MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.addMovement(event)
                     val deltaY = event.y - startY
-                    // Only trigger if swiping down and drawer content is at top
-                    if (deltaY > 20 && !drawerPager.canScrollVertically(-1)) {
+                    // Only trigger if swiping down
+                    if (deltaY > 20) {
                         if (!isDragging) {
                             isDragging = true
                             // Get the drawer container from activity
@@ -142,9 +141,20 @@ class AppDrawerFragment : Fragment() {
                             val screenHeight = resources.displayMetrics.heightPixels
                             val currentTranslation = drawerContainer.translationY
                             
-                            // If swiped down enough (30% of screen or 200px), close drawer
-                            val threshold = (screenHeight * 0.3f).coerceAtLeast(200 * resources.displayMetrics.density)
-                            if (currentTranslation > threshold || deltaY > threshold) {
+                            // Calculate velocity for more responsive closing
+                            velocityTracker?.computeCurrentVelocity(1000)
+                            val velocityY = velocityTracker?.yVelocity ?: 0f
+                            velocityTracker?.recycle()
+                            velocityTracker = null
+                            
+                            // Reduced threshold: 10% of screen or 80dp, whichever is smaller
+                            // Also close if velocity is high (fast swipe)
+                            val minThreshold = 80 * resources.displayMetrics.density
+                            val maxThreshold = screenHeight * 0.15f // 15% of screen
+                            val threshold = minThreshold.coerceAtMost(maxThreshold)
+                            val velocityThreshold = 500f // Close if swiping faster than 500px/s
+                            
+                            if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
                                 // Close drawer with reverse animation
                                 (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
                             } else {
@@ -163,6 +173,8 @@ class AppDrawerFragment : Fragment() {
                         isDragging = false
                         true
                     } else {
+                        velocityTracker?.recycle()
+                        velocityTracker = null
                         false
                     }
                 }
@@ -170,20 +182,11 @@ class AppDrawerFragment : Fragment() {
             }
         }
         
-        // Set up swipe down gesture on AppBarLayout (TabLayout area)
+        // Set up swipe down gesture on AppBarLayout (TabLayout area) - always allow closing from here
         appBarLayout?.setOnTouchListener { v, event ->
             handleSwipeDown(v, event, true)
         }
         
-        // Also set up swipe down on ViewPager2 when at top
-        drawerPager.setOnTouchListener { v, event ->
-            // Only handle if drawer is at top and swiping down
-            if (!drawerPager.canScrollVertically(-1)) {
-                handleSwipeDown(v, event, false)
-            } else {
-                false // Let ViewPager2 handle normal scrolling
-            }
-        }
     }
     
     private fun loadApps() {
@@ -282,6 +285,122 @@ class AppDrawerPageFragment : Fragment() {
         }
         
         recyclerView.adapter = adapter
+        
+        // Set up swipe-to-close gesture on RecyclerView
+        setupSwipeToCloseOnRecyclerView(recyclerView)
+    }
+    
+    private fun setupSwipeToCloseOnRecyclerView(recyclerView: androidx.recyclerview.widget.RecyclerView) {
+        var startY = 0f
+        var isDragging = false
+        var wasScrolling = false
+        var velocityTracker: android.view.VelocityTracker? = null
+        
+        recyclerView.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(recyclerView: androidx.recyclerview.widget.RecyclerView, newState: Int) {
+                super.onScrollStateChanged(recyclerView, newState)
+                wasScrolling = newState != androidx.recyclerview.widget.RecyclerView.SCROLL_STATE_IDLE
+            }
+        })
+        
+        recyclerView.setOnTouchListener { v, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    startY = event.y
+                    isDragging = false
+                    wasScrolling = false
+                    velocityTracker = android.view.VelocityTracker.obtain()
+                    velocityTracker?.addMovement(event)
+                    // Check if RecyclerView is at top - if so, allow swipe down to close
+                    if (!recyclerView.canScrollVertically(-1)) {
+                        // Allow parent to intercept if swiping down
+                        false
+                    } else {
+                        false // Let RecyclerView handle scrolling
+                    }
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.addMovement(event)
+                    val deltaY = event.y - startY
+                    
+                    // If RecyclerView is at top and swiping down, handle drawer close
+                    if (!recyclerView.canScrollVertically(-1) && deltaY > 20 && !wasScrolling) {
+                        if (!isDragging) {
+                            isDragging = true
+                            // Prevent RecyclerView from scrolling
+                            recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+                            
+                            // Get the drawer container from activity
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                            if (drawerContainer != null) {
+                                drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                            }
+                        }
+                        
+                        // Apply translation to drawer container
+                        val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                        if (drawerContainer != null) {
+                            val screenHeight = resources.displayMetrics.heightPixels
+                            val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                            drawerContainer.translationY = translation
+                            drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
+                        }
+                        true // Consume the event
+                    } else {
+                        // Let RecyclerView handle normal scrolling
+                        false
+                    }
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    if (isDragging) {
+                        val deltaY = event.y - startY
+                        val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                        
+                        if (drawerContainer != null) {
+                            val screenHeight = resources.displayMetrics.heightPixels
+                            val currentTranslation = drawerContainer.translationY
+                            
+                            // Calculate velocity for more responsive closing
+                            velocityTracker?.computeCurrentVelocity(1000)
+                            val velocityY = velocityTracker?.yVelocity ?: 0f
+                            velocityTracker?.recycle()
+                            velocityTracker = null
+                            
+                            // Reduced threshold: 10% of screen or 80dp, whichever is smaller
+                            // Also close if velocity is high (fast swipe)
+                            val minThreshold = 80 * resources.displayMetrics.density
+                            val maxThreshold = screenHeight * 0.15f // 15% of screen
+                            val threshold = minThreshold.coerceAtMost(maxThreshold)
+                            val velocityThreshold = 500f // Close if swiping faster than 500px/s
+                            
+                            if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
+                                // Close drawer with reverse animation
+                                (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
+                            } else {
+                                // Snap back to original position with smooth animation
+                                drawerContainer.animate()
+                                    .translationY(0f)
+                                    .alpha(1f)
+                                    .setDuration(300)
+                                    .setInterpolator(android.view.animation.DecelerateInterpolator())
+                                    .start()
+                            }
+                        }
+                        
+                        // Re-enable touch events
+                        recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
+                        drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
+                        isDragging = false
+                        true
+                    } else {
+                        velocityTracker?.recycle()
+                        velocityTracker = null
+                        false
+                    }
+                }
+                else -> false
+            }
+        }
     }
     
     private fun startDragFromDrawer(app: AppInfo, recyclerView: androidx.recyclerview.widget.RecyclerView) {
