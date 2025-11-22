@@ -7,6 +7,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -36,6 +37,19 @@ class LauncherActivity : AppCompatActivity() {
     private var drawerContainer: View? = null
     private var homeScreenContainer: View? = null
     
+    // Permission launcher for READ_EXTERNAL_STORAGE
+    private val requestStoragePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            android.util.Log.d("LauncherActivity", "READ_EXTERNAL_STORAGE permission granted")
+            // Reload wallpaper now that permission is granted
+            loadWallpaper()
+        } else {
+            android.util.Log.w("LauncherActivity", "READ_EXTERNAL_STORAGE permission denied")
+            // Continue without permission - wallpaper will use fallback methods
+        }
+    }
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,6 +87,9 @@ class LauncherActivity : AppCompatActivity() {
             // Check for root and grant permissions if available
             checkAndGrantRootPermissions()
             
+            // Request READ_EXTERNAL_STORAGE permission if needed
+            requestStoragePermissionIfNeeded()
+            
             setupFragments()
             setupGestures()
             
@@ -103,19 +120,23 @@ class LauncherActivity : AppCompatActivity() {
             val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
             var wallpaperDrawable: android.graphics.drawable.Drawable? = null
             
-            // Method 1: Try drawable property (requires permission on some devices)
-            if (wallpaperDrawable == null) {
+            // On Android 10+ (API 29+), READ_EXTERNAL_STORAGE doesn't help with wallpaper access
+            // The wallpaper is managed by the system, not stored in external storage
+            // So we skip the drawable property on modern Android and use methods that don't require permission
+            
+            // Method 1: Try drawable property (only on older Android versions, requires permission on some devices)
+            if (wallpaperDrawable == null && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
                 try {
                     wallpaperDrawable = wallpaperManager.drawable
                     android.util.Log.d("LauncherActivity", "drawable property result: ${wallpaperDrawable != null}")
                 } catch (e: SecurityException) {
-                    android.util.Log.w("LauncherActivity", "drawable property requires permission: ${e.message}")
+                    android.util.Log.d("LauncherActivity", "drawable property requires permission, will try alternatives: ${e.message}")
                 } catch (e: Exception) {
-                    android.util.Log.w("LauncherActivity", "drawable property failed: ${e.message}")
+                    android.util.Log.d("LauncherActivity", "drawable property failed: ${e.message}")
                 }
             }
             
-            // Method 3: Try peekDrawable (might work without permission)
+            // Method 2: Try peekDrawable (works without permission on all Android versions)
             if (wallpaperDrawable == null) {
                 try {
                     wallpaperDrawable = wallpaperManager.peekDrawable()
@@ -125,7 +146,7 @@ class LauncherActivity : AppCompatActivity() {
                 }
             }
             
-            // Method 4: Try fastDrawable (Android N+)
+            // Method 3: Try fastDrawable (Android N+, works without permission)
             if (wallpaperDrawable == null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
                 try {
                     wallpaperDrawable = wallpaperManager.fastDrawable
@@ -389,6 +410,28 @@ class LauncherActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+    
+    private fun requestStoragePermissionIfNeeded() {
+        // Check if permission is already granted
+        if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) 
+            == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.d("LauncherActivity", "READ_EXTERNAL_STORAGE permission already granted")
+            return
+        }
+        
+        // Request permission on all Android versions
+        // Note: On Android 10+ (API 29+), this permission doesn't help with wallpaper access,
+        // but it may be useful for other features like backup/restore
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+            // Android 9 and below - permission is required for accessing external storage
+            android.util.Log.d("LauncherActivity", "Requesting READ_EXTERNAL_STORAGE permission (required on Android 9-)")
+        } else {
+            // Android 10+ - permission is optional but can still be requested
+            android.util.Log.d("LauncherActivity", "Requesting READ_EXTERNAL_STORAGE permission (optional on Android 10+)")
+        }
+        
+        requestStoragePermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
     }
     
     private fun setupFragments() {
