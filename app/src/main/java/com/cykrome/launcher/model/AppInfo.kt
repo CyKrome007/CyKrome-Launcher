@@ -17,10 +17,22 @@ data class AppInfo(
         get() = ComponentName(packageName, activityName)
     
     fun getLaunchIntent(packageManager: PackageManager): android.content.Intent? {
-        return packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            component = componentName
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        return try {
+            // Create intent directly using ComponentName to ensure we launch the specific activity
+            android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                component = componentName
+                addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                // For SettingsActivity, ensure it can open in a separate task
+                // The taskAffinity="" in manifest helps, but we also need this flag
+                if (activityName.contains("SettingsActivity", ignoreCase = true)) {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AppInfo", "Error creating launch intent for $packageName/$activityName: ${e.message}", e)
+            null
         }
     }
 }

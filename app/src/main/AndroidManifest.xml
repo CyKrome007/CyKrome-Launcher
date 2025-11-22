@@ -52,6 +52,8 @@
             android:label="@string/settings_title"
             android:parentActivityName=".ui.LauncherActivity"
             android:theme="@style/Theme.CyKromeLauncher"
+            android:launchMode="standard"
+            android:taskAffinity=".SettingsTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
