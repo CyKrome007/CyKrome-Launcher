@@ -60,20 +60,21 @@ class AppDrawerFragment : Fragment() {
     private fun adjustDrawerTopPadding(view: View) {
         try {
             val appBarLayout = view.findViewById<com.google.android.material.appbar.AppBarLayout>(R.id.appBarLayout)
+            val drawerTabs = view.findViewById<com.google.android.material.tabs.TabLayout>(R.id.drawerTabs)
             if (appBarLayout != null) {
-                val statusBarHeight = getStatusBarHeight()
-                val extraPadding = (16 * resources.displayMetrics.density).toInt() // 16dp
-                val totalTopPadding = statusBarHeight + extraPadding
+                // Remove all padding from AppBarLayout to eliminate any space
+                appBarLayout.setPadding(0, 0, 0, 0)
                 
-                // Set padding on AppBarLayout
-                appBarLayout.setPadding(
-                    appBarLayout.paddingLeft,
-                    totalTopPadding,
-                    appBarLayout.paddingRight,
-                    appBarLayout.paddingBottom
-                )
+                // Remove all padding from TabLayout to eliminate pink/grey space
+                if (drawerTabs != null) {
+                    drawerTabs.setPadding(0, 0, 0, 0)
+                    // Also set margin to 0 to ensure no extra space
+                    val layoutParams = drawerTabs.layoutParams as? android.view.ViewGroup.MarginLayoutParams
+                    layoutParams?.topMargin = 0
+                    drawerTabs.layoutParams = layoutParams
+                }
                 
-                android.util.Log.d("AppDrawerFragment", "Added top padding to drawer: $totalTopPadding px")
+                android.util.Log.d("AppDrawerFragment", "Removed all padding and margins from drawer top")
             }
         } catch (e: Exception) {
             android.util.Log.e("AppDrawerFragment", "Error adjusting drawer top padding: ${e.message}", e)
