@@ -43,14 +43,6 @@ class HomeScreenFragment : Fragment() {
             preferences = LauncherPreferences(requireContext())
             homePager = view.findViewById(R.id.homePager)
             
-            // Adjust search bar position to account for top padding
-            adjustSearchBarPosition(view)
-            
-            // Set up search bar click
-            view.findViewById<View>(R.id.searchBarContainer)?.setOnClickListener {
-                openGoogleSearch()
-            }
-            
             // Set up gesture interceptor for swipe up to open app drawer
             homePager.setOnTouchListener { v, event ->
                 // Let the parent handle gestures for app drawer
@@ -67,55 +59,6 @@ class HomeScreenFragment : Fragment() {
         } catch (e: Exception) {
             e.printStackTrace()
             android.util.Log.e("HomeScreenFragment", "Error in onViewCreated: ${e.message}", e)
-        }
-    }
-    
-    private fun adjustSearchBarPosition(view: View) {
-        try {
-            val searchBarContainer = view.findViewById<View>(R.id.searchBarContainer)
-            val statusBarHeight = getStatusBarHeight()
-            val extraPadding = (20 * resources.displayMetrics.density).toInt() // 20dp
-            val totalTopPadding = statusBarHeight + extraPadding
-            
-            // Set margin top to account for status bar and padding
-            val layoutParams = searchBarContainer?.layoutParams as? android.view.ViewGroup.MarginLayoutParams
-            layoutParams?.topMargin = totalTopPadding
-            searchBarContainer?.layoutParams = layoutParams
-            
-            // Update search bar background based on theme
-            if (isDarkMode(requireContext())) {
-                searchBarContainer?.setBackgroundResource(R.drawable.search_bar_background_dark)
-            } else {
-                searchBarContainer?.setBackgroundResource(R.drawable.search_bar_background)
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("HomeScreenFragment", "Error adjusting search bar position: ${e.message}", e)
-        }
-    }
-    
-    private fun getStatusBarHeight(): Int {
-        var result = 0
-        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
-        if (resourceId > 0) {
-            result = resources.getDimensionPixelSize(resourceId)
-        }
-        return result
-    }
-    
-    private fun openGoogleSearch() {
-        try {
-            val intent = android.content.Intent(android.content.Intent.ACTION_WEB_SEARCH).apply {
-                putExtra("query", "")
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
-            // Fallback to opening browser
-            try {
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com"))
-                startActivity(intent)
-            } catch (e2: Exception) {
-                android.util.Log.e("HomeScreenFragment", "Error opening search: ${e2.message}", e2)
-            }
         }
     }
     
@@ -238,21 +181,82 @@ class HomeScreenFragment : Fragment() {
     
     private fun setupDock(view: View) {
         try {
-            // Find the dock containers - dockScrollView is the outer LinearLayout, dockContainer is the inner one
-            val dockScrollView = view.findViewById<ViewGroup>(R.id.dockScrollView)
-            val dockContainer = dockScrollView?.findViewById<ViewGroup>(R.id.dockContainer) // Get the LinearLayout inside
+            // Find the dock containers
+            // The include tag has id="dockContainer" which refers to the outer LinearLayout from dock_layout.xml
+            // The outer layout has id="dockScrollView" in dock_layout.xml, but the include's id overrides it
+            val dockOuter = view.findViewById<ViewGroup>(R.id.dockContainer) // This is the include/outer layout
             
-            if (dockContainer == null || dockScrollView == null) {
-                android.util.Log.e("HomeScreenFragment", "Dock container not found - scrollView: ${dockScrollView != null}, container: ${dockContainer != null}")
+            if (dockOuter == null) {
+                android.util.Log.e("HomeScreenFragment", "Dock outer container not found")
                 return
             }
             
+            // Find the inner container - it's the first (and only) child LinearLayout
+            // Since both have the same ID due to include, we find it by traversing
+            var dockContainer: ViewGroup? = null
+            for (i in 0 until dockOuter.childCount) {
+                val child = dockOuter.getChildAt(i)
+                if (child is android.widget.LinearLayout && child.orientation == android.widget.LinearLayout.HORIZONTAL) {
+                    dockContainer = child
+                    break
+                }
+            }
+            
+            // Alternative: try finding by the original ID from the layout file
+            if (dockContainer == null) {
+                try {
+                    // Try to find by the ID that should be in the included layout
+                    dockContainer = dockOuter.findViewById(R.id.dockContainer)
+                } catch (e: Exception) {
+                    android.util.Log.d("HomeScreenFragment", "Could not find dockContainer by ID, trying by index")
+                }
+            }
+            
+            // Last resort: get first child if it's a ViewGroup
+            if (dockContainer == null && dockOuter.childCount > 0) {
+                val firstChild = dockOuter.getChildAt(0)
+                if (firstChild is ViewGroup) {
+                    dockContainer = firstChild
+                    android.util.Log.d("HomeScreenFragment", "Found dock container as first child")
+                }
+            }
+            
+            if (dockContainer == null) {
+                android.util.Log.e("HomeScreenFragment", "Dock inner container not found. Outer has ${dockOuter.childCount} children")
+                return
+            }
+            
+            android.util.Log.d("HomeScreenFragment", "Dock containers found - outer: ${dockOuter.javaClass.simpleName}, inner: ${dockContainer.javaClass.simpleName}")
+            setupDockWithContainers(dockOuter, dockContainer, view)
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error setting up dock: ${e.message}", e)
+            e.printStackTrace()
+        }
+    }
+    
+    private fun setupDockWithContainers(dockOuter: ViewGroup, dockContainer: ViewGroup, view: View) {
+        try {
             // Update dock background based on theme
             if (isDarkMode(requireContext())) {
-                dockScrollView?.setBackgroundResource(R.drawable.dock_background_dark)
+                dockOuter.setBackgroundResource(R.drawable.dock_background_dark)
             } else {
-                dockScrollView?.setBackgroundResource(R.drawable.dock_background)
+                dockOuter.setBackgroundResource(R.drawable.dock_background)
             }
+            
+            // Make sure dock is visible and has proper layout params
+            dockOuter.visibility = View.VISIBLE
+            dockContainer.visibility = View.VISIBLE
+            
+            // Ensure dock has proper layout params (no bottom margin)
+            val layoutParams = dockOuter.layoutParams as? android.widget.FrameLayout.LayoutParams
+            if (layoutParams != null) {
+                layoutParams.bottomMargin = 0 // No gap at the bottom
+                layoutParams.gravity = android.view.Gravity.BOTTOM or android.view.Gravity.CENTER_HORIZONTAL
+                dockOuter.layoutParams = layoutParams
+                android.util.Log.d("HomeScreenFragment", "Dock layout params updated with no bottom margin")
+            }
+            
+            android.util.Log.d("HomeScreenFragment", "Dock containers found and made visible - outer visibility: ${dockOuter.visibility}, inner visibility: ${dockContainer.visibility}")
             
             // Clear existing dock items
             dockContainer.removeAllViews()
@@ -278,8 +282,11 @@ class HomeScreenFragment : Fragment() {
             // Load all apps asynchronously
             lifecycleScope.launch {
                 try {
+                    android.util.Log.d("HomeScreenFragment", "Loading apps for dock...")
                     val allApps = AppLoader.loadApps(requireContext())
+                    android.util.Log.d("HomeScreenFragment", "Loaded ${allApps.size} apps total")
                     
+                    var appsAdded = 0
                     // Find and add dock apps
                     dockAppPackages.forEach { packageName ->
                         var app = allApps.find { it.packageName == packageName }
@@ -289,7 +296,10 @@ class HomeScreenFragment : Fragment() {
                             val alternatives = dockAppPackageAlternatives[packageName] ?: emptyList()
                             for (altPackage in alternatives) {
                                 app = allApps.find { it.packageName == altPackage }
-                                if (app != null) break
+                                if (app != null) {
+                                    android.util.Log.d("HomeScreenFragment", "Found alternative for $packageName: $altPackage")
+                                    break
+                                }
                             }
                         }
                         
@@ -298,13 +308,22 @@ class HomeScreenFragment : Fragment() {
                             requireActivity().runOnUiThread {
                                 val dockItem = createDockItemView(app)
                                 dockContainer.addView(dockItem)
+                                appsAdded++
+                                android.util.Log.d("HomeScreenFragment", "Added dock app: ${app.label} (${app.packageName}). Total dock items: ${dockContainer.childCount}")
                             }
                         } else {
                             android.util.Log.w("HomeScreenFragment", "Dock app not found: $packageName")
                         }
                     }
+                    
+                    requireActivity().runOnUiThread {
+                        android.util.Log.d("HomeScreenFragment", "Dock setup complete. Total apps added: $appsAdded, Total children in dock: ${dockContainer.childCount}")
+                        android.util.Log.d("HomeScreenFragment", "Dock outer visibility: ${dockOuter.visibility}, Dock inner visibility: ${dockContainer.visibility}")
+                        android.util.Log.d("HomeScreenFragment", "Dock outer height: ${dockOuter.height}, Dock inner height: ${dockContainer.height}")
+                    }
                 } catch (e: Exception) {
                     android.util.Log.e("HomeScreenFragment", "Error loading apps for dock: ${e.message}", e)
+                    e.printStackTrace()
                 }
             }
         } catch (e: Exception) {
@@ -314,13 +333,20 @@ class HomeScreenFragment : Fragment() {
     
     private fun createDockItemView(app: AppInfo): View {
         val context = requireContext()
+        val density = resources.displayMetrics.density
         
         // Create a custom dock item view with background
         val dockItem = android.widget.FrameLayout(context)
-        dockItem.layoutParams = android.view.ViewGroup.LayoutParams(
-            (64 * resources.displayMetrics.density).toInt(), // 64dp width
-            (64 * resources.displayMetrics.density).toInt() // 64dp height
+        
+        // Set layout params for LinearLayout parent (horizontal orientation)
+        val itemSize = (64 * density).toInt() // 64dp
+        val margin = (8 * density).toInt() // 8dp margin between items
+        val params = android.widget.LinearLayout.LayoutParams(
+            itemSize,
+            itemSize
         )
+        params.setMargins(margin, 0, margin, 0)
+        dockItem.layoutParams = params
         
         // Add background with rounded corners
         val backgroundDrawable = if (isDarkMode(context)) {
@@ -331,33 +357,48 @@ class HomeScreenFragment : Fragment() {
         dockItem.background = backgroundDrawable
         
         // Add padding
-        val padding = (8 * resources.displayMetrics.density).toInt()
+        val padding = (8 * density).toInt()
         dockItem.setPadding(padding, padding, padding, padding)
         
         // Add elevation
         dockItem.elevation = 4f
         
-        // Add click effect
-        dockItem.foreground = context.getDrawable(android.R.attr.selectableItemBackground)
+        // Add click effect - use TypedArray to resolve attribute
+        val typedArray = context.obtainStyledAttributes(intArrayOf(android.R.attr.selectableItemBackground))
+        val selectableItemBackground = typedArray.getResourceId(0, 0)
+        typedArray.recycle()
+        if (selectableItemBackground != 0) {
+            dockItem.foreground = context.getDrawable(selectableItemBackground)
+        }
         dockItem.isClickable = true
         dockItem.isFocusable = true
         
+        // Make sure dock item is visible
+        dockItem.visibility = View.VISIBLE
+        
         // Create icon view
         val iconView = android.widget.ImageView(context)
-        val iconSize = (48 * resources.displayMetrics.density).toInt() // 48dp icon
-        iconView.layoutParams = android.view.ViewGroup.LayoutParams(
+        val iconSize = (48 * density).toInt() // 48dp icon
+        val iconParams = android.widget.FrameLayout.LayoutParams(
             iconSize,
             iconSize
         )
+        iconParams.gravity = android.view.Gravity.CENTER
+        iconView.layoutParams = iconParams
         iconView.scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
         iconView.adjustViewBounds = true
+        
+        // Make sure icon is visible
+        iconView.visibility = View.VISIBLE
         
         // Set app icon
         val packageManager = context.packageManager
         try {
             val appInfo = packageManager.getApplicationInfo(app.packageName, 0)
             iconView.setImageDrawable(packageManager.getApplicationIcon(appInfo))
+            android.util.Log.d("HomeScreenFragment", "Set icon for ${app.label}: ${app.packageName}")
         } catch (e: Exception) {
+            android.util.Log.w("HomeScreenFragment", "Failed to load icon for ${app.packageName}: ${e.message}")
             iconView.setImageResource(android.R.drawable.sym_def_app_icon)
         }
         
@@ -367,12 +408,6 @@ class HomeScreenFragment : Fragment() {
         dockItem.setOnClickListener {
             launchApp(app)
         }
-        
-        // Add margin between dock items
-        val margin = (8 * resources.displayMetrics.density).toInt()
-        val params = android.view.ViewGroup.MarginLayoutParams(dockItem.layoutParams)
-        params.setMargins(margin, 0, margin, 0)
-        dockItem.layoutParams = params
         
         return dockItem
     }
