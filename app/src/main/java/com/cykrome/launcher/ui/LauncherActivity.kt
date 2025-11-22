@@ -1,6 +1,8 @@
 package com.cykrome.launcher.ui
 
 import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -9,6 +11,7 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.cykrome.launcher.R
@@ -37,18 +40,56 @@ class LauncherActivity : AppCompatActivity() {
     private var drawerContainer: View? = null
     private var homeScreenContainer: View? = null
     
-    // Permission launcher for READ_EXTERNAL_STORAGE
+    // Permission launchers
     private val requestStoragePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
-        if (isGranted) {
-            android.util.Log.d("LauncherActivity", "READ_EXTERNAL_STORAGE permission granted")
-            // Reload wallpaper now that permission is granted
-            loadWallpaper()
-        } else {
-            android.util.Log.w("LauncherActivity", "READ_EXTERNAL_STORAGE permission denied")
-            // Continue without permission - wallpaper will use fallback methods
+        android.util.Log.d("LauncherActivity", "READ_EXTERNAL_STORAGE permission: $isGranted")
+    }
+    
+    private val requestManageStoragePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val hasPermission = android.os.Environment.isExternalStorageManager()
+            android.util.Log.d("LauncherActivity", "MANAGE_EXTERNAL_STORAGE permission: $hasPermission")
         }
+    }
+    
+    private val requestMediaImagesPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        android.util.Log.d("LauncherActivity", "READ_MEDIA_IMAGES permission: $isGranted")
+    }
+    
+    private val requestPhoneStatePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        android.util.Log.d("LauncherActivity", "READ_PHONE_STATE permission: $isGranted")
+    }
+    
+    private val requestPhoneNumbersPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        android.util.Log.d("LauncherActivity", "READ_PHONE_NUMBERS permission: $isGranted")
+    }
+    
+    private val requestReadSmsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        android.util.Log.d("LauncherActivity", "READ_SMS permission: $isGranted")
+    }
+    
+    private val requestSendSmsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        android.util.Log.d("LauncherActivity", "SEND_SMS permission: $isGranted")
+    }
+    
+    private val requestReceiveSmsPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        android.util.Log.d("LauncherActivity", "RECEIVE_SMS permission: $isGranted")
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,8 +112,15 @@ class LauncherActivity : AppCompatActivity() {
             // Create blur overlay for context menus
             val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
             blurOverlay = com.cykrome.launcher.util.BlurHelper.createBlurOverlay(this, rootLayout)
+            // Ensure blur overlay is hidden and not blocking touches initially
+            blurOverlay?.visibility = View.GONE
+            blurOverlay?.isClickable = false
+            blurOverlay?.isFocusable = false
             
             preferences = LauncherPreferences(this)
+            
+            // Ensure home screen container is visible
+            findViewById<ViewGroup>(R.id.homeScreenContainer)?.visibility = View.VISIBLE
             
             // Load system wallpaper after view is created - use post to ensure view is ready
             findViewById<ViewGroup>(R.id.rootLayout)?.post {
@@ -87,8 +135,8 @@ class LauncherActivity : AppCompatActivity() {
             // Check for root and grant permissions if available
             checkAndGrantRootPermissions()
             
-            // Request READ_EXTERNAL_STORAGE permission if needed
-            requestStoragePermissionIfNeeded()
+            // Request all required permissions
+            requestAllPermissions()
             
             setupFragments()
             setupGestures()
@@ -117,107 +165,93 @@ class LauncherActivity : AppCompatActivity() {
     private fun loadWallpaper() {
         try {
             val wallpaperManager = android.app.WallpaperManager.getInstance(this)
-            val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
-            var wallpaperDrawable: android.graphics.drawable.Drawable? = null
-            
-            // On Android 10+ (API 29+), READ_EXTERNAL_STORAGE doesn't help with wallpaper access
-            // The wallpaper is managed by the system, not stored in external storage
-            // So we skip the drawable property on modern Android and use methods that don't require permission
-            
-            // Method 1: Try drawable property (only on older Android versions, requires permission on some devices)
-            if (wallpaperDrawable == null && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
-                try {
-                    wallpaperDrawable = wallpaperManager.drawable
-                    android.util.Log.d("LauncherActivity", "drawable property result: ${wallpaperDrawable != null}")
-                } catch (e: SecurityException) {
-                    android.util.Log.d("LauncherActivity", "drawable property requires permission, will try alternatives: ${e.message}")
-                } catch (e: Exception) {
-                    android.util.Log.d("LauncherActivity", "drawable property failed: ${e.message}")
-                }
-            }
-            
-            // Method 2: Try peekDrawable (works without permission on all Android versions)
-            if (wallpaperDrawable == null) {
-                try {
-                    wallpaperDrawable = wallpaperManager.peekDrawable()
-                    android.util.Log.d("LauncherActivity", "peekDrawable() result: ${wallpaperDrawable != null}")
-                } catch (e: Exception) {
-                    android.util.Log.w("LauncherActivity", "peekDrawable() failed: ${e.message}")
-                }
-            }
-            
-            // Method 3: Try fastDrawable (Android N+, works without permission)
-            if (wallpaperDrawable == null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-                try {
-                    wallpaperDrawable = wallpaperManager.fastDrawable
-                    android.util.Log.d("LauncherActivity", "fastDrawable result: ${wallpaperDrawable != null}")
-                } catch (e: Exception) {
-                    android.util.Log.w("LauncherActivity", "fastDrawable failed: ${e.message}")
-                }
-            }
+            val wallpaperDrawable = wallpaperManager.drawable
             
             if (wallpaperDrawable != null) {
-                android.util.Log.d("LauncherActivity", "Setting wallpaper on all views")
+                // Create a center-cropped version of the wallpaper
+                val centerCroppedDrawable = createCenterCroppedDrawable(wallpaperDrawable)
                 
-                // Set on window first (most important for launchers)
-                try {
-                    window.setBackgroundDrawable(wallpaperDrawable)
-                    android.util.Log.d("LauncherActivity", "Window background set")
-                } catch (e: Exception) {
-                    android.util.Log.e("LauncherActivity", "Error setting window background: ${e.message}", e)
-                }
+                // Set wallpaper as window background
+                window.setBackgroundDrawable(centerCroppedDrawable)
                 
                 // Set wallpaper on root layout
-                rootLayout?.background = wallpaperDrawable
+                findViewById<ViewGroup>(R.id.rootLayout)?.background = centerCroppedDrawable
                 
-                // Set on content view
-                try {
-                    findViewById<View>(android.R.id.content)?.background = wallpaperDrawable
-                } catch (e: Exception) {
-                    android.util.Log.e("LauncherActivity", "Error setting content background: ${e.message}", e)
-                }
-                
-                // Also set on decor view
-                try {
-                    window.decorView.background = wallpaperDrawable
-                } catch (e: Exception) {
-                    android.util.Log.e("LauncherActivity", "Error setting decor background: ${e.message}", e)
-                }
-                
-                android.util.Log.d("LauncherActivity", "Wallpaper set successfully")
+                android.util.Log.d("LauncherActivity", "Wallpaper set successfully with center crop")
             } else {
-                android.util.Log.w("LauncherActivity", "All wallpaper methods failed, using transparent fallback")
-                // Use transparent so system wallpaper can show through
-                try {
-                    window.setBackgroundDrawableResource(android.R.color.transparent)
-                } catch (e: Exception) {
-                    android.util.Log.e("LauncherActivity", "Error setting transparent window: ${e.message}", e)
-                }
-                rootLayout?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                findViewById<View>(android.R.id.content)?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                window.decorView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                android.util.Log.w("LauncherActivity", "Could not get wallpaper drawable")
             }
-            
-            // Make sure all containers are transparent so wallpaper shows through
-            findViewById<ViewGroup>(R.id.homeScreenContainer)?.background = null
-            findViewById<ViewGroup>(R.id.appDrawerContainer)?.background = null
-            findViewById<ViewGroup>(R.id.searchContainer)?.background = null
-            
-            // Also ensure ViewPager2 and RecyclerView backgrounds are transparent
-            findViewById<androidx.viewpager2.widget.ViewPager2>(R.id.homePager)?.background = null
-            
-            // Add top padding to the whole launcher
-            addTopPaddingToLauncher()
         } catch (e: Exception) {
             android.util.Log.e("LauncherActivity", "Error loading wallpaper: ${e.message}", e)
-            e.printStackTrace()
-            // Fallback to transparent
-            try {
-                val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
-                rootLayout?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                window.setBackgroundDrawableResource(android.R.color.transparent)
-            } catch (e2: Exception) {
-                android.util.Log.e("LauncherActivity", "Error in fallback: ${e2.message}", e2)
+        }
+    }
+    
+    private fun createCenterCroppedDrawable(drawable: Drawable): Drawable {
+        return object : Drawable() {
+            override fun draw(canvas: Canvas) {
+                val bounds = bounds
+                val intrinsicWidth = drawable.intrinsicWidth
+                val intrinsicHeight = drawable.intrinsicHeight
+                
+                if (intrinsicWidth > 0 && intrinsicHeight > 0) {
+                    val viewWidth = bounds.width()
+                    val viewHeight = bounds.height()
+                    
+                    // Calculate scale to fill the view while maintaining aspect ratio (center crop)
+                    val scaleX = viewWidth.toFloat() / intrinsicWidth
+                    val scaleY = viewHeight.toFloat() / intrinsicHeight
+                    val scale = scaleX.coerceAtLeast(scaleY) // Use larger scale to fill
+                    
+                    // Calculate the source rectangle (center crop)
+                    val scaledWidth = (intrinsicWidth * scale).toInt()
+                    val scaledHeight = (intrinsicHeight * scale).toInt()
+                    val srcLeft = (scaledWidth - viewWidth) / 2
+                    val srcTop = (scaledHeight - viewHeight) / 2
+                    
+                    // Save canvas state
+                    canvas.save()
+                    
+                    // Clip to bounds
+                    canvas.clipRect(bounds)
+                    
+                    // Translate to center the cropped portion
+                    canvas.translate(-srcLeft.toFloat(), -srcTop.toFloat())
+                    
+                    // Scale the drawable
+                    canvas.scale(scale, scale)
+                    
+                    // Draw the drawable
+                    drawable.setBounds(0, 0, intrinsicWidth, intrinsicHeight)
+                    drawable.draw(canvas)
+                    
+                    // Restore canvas state
+                    canvas.restore()
+                } else {
+                    // Fallback: draw normally if dimensions are invalid
+                    drawable.setBounds(bounds)
+                    drawable.draw(canvas)
+                }
+            }
+            
+            override fun setAlpha(alpha: Int) {
+                drawable.alpha = alpha
+            }
+            
+            override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
+                drawable.colorFilter = colorFilter
+            }
+            
+            @Suppress("DEPRECATION")
+            override fun getOpacity(): Int {
+                return drawable.opacity
+            }
+            
+            override fun getIntrinsicWidth(): Int {
+                return drawable.intrinsicWidth
+            }
+            
+            override fun getIntrinsicHeight(): Int {
+                return drawable.intrinsicHeight
             }
         }
     }
@@ -280,13 +314,11 @@ class LauncherActivity : AppCompatActivity() {
     
     private fun configureWindow() {
         try {
-            // Remove any translucent flags that might show old launcher behind
-            window.clearFlags(
-                android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS
-                or android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION
-            )
+            // Set window background to transparent BEFORE setContentView
+            // This allows the system wallpaper to show through
+            window.setBackgroundDrawableResource(android.R.color.transparent)
             
-            // Ensure window is fully opaque (not translucent)
+            // Enable edge-to-edge: allow drawing behind system bars
             window.setFlags(
                 android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 or android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
@@ -296,9 +328,10 @@ class LauncherActivity : AppCompatActivity() {
                 or android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
             )
             
-            // Don't set background here - let loadWallpaper() handle it
+            // Use WindowCompat for proper edge-to-edge support
+            WindowCompat.setDecorFitsSystemWindows(window, false)
             
-            // Show status bar with proper configuration
+            // Configure system bars to be transparent
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 window.insetsController?.apply {
                     setSystemBarsAppearance(
@@ -312,10 +345,9 @@ class LauncherActivity : AppCompatActivity() {
                 window.decorView.systemUiVisibility = (
                     android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                     or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                 )
             }
-            
-            // Background will be set by loadWallpaper()
         } catch (e: Exception) {
             android.util.Log.e("LauncherActivity", "Error configuring window: ${e.message}", e)
         }
@@ -412,26 +444,87 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
     
-    private fun requestStoragePermissionIfNeeded() {
-        // Check if permission is already granted
-        if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) 
-            == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            android.util.Log.d("LauncherActivity", "READ_EXTERNAL_STORAGE permission already granted")
-            return
+    private fun requestAllPermissions() {
+        // Request Phone permissions
+        if (checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) 
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPhoneStatePermissionLauncher.launch(android.Manifest.permission.READ_PHONE_STATE)
         }
         
-        // Request permission on all Android versions
-        // Note: On Android 10+ (API 29+), this permission doesn't help with wallpaper access,
-        // but it may be useful for other features like backup/restore
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
-            // Android 9 and below - permission is required for accessing external storage
-            android.util.Log.d("LauncherActivity", "Requesting READ_EXTERNAL_STORAGE permission (required on Android 9-)")
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            if (checkSelfPermission(android.Manifest.permission.READ_PHONE_NUMBERS) 
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPhoneNumbersPermissionLauncher.launch(android.Manifest.permission.READ_PHONE_NUMBERS)
+            }
+        }
+        
+        // Request SMS permissions
+        if (checkSelfPermission(android.Manifest.permission.READ_SMS) 
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestReadSmsPermissionLauncher.launch(android.Manifest.permission.READ_SMS)
+        }
+        
+        if (checkSelfPermission(android.Manifest.permission.SEND_SMS) 
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestSendSmsPermissionLauncher.launch(android.Manifest.permission.SEND_SMS)
+        }
+        
+        if (checkSelfPermission(android.Manifest.permission.RECEIVE_SMS) 
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestReceiveSmsPermissionLauncher.launch(android.Manifest.permission.RECEIVE_SMS)
+        }
+        
+        // Request storage permissions
+        // On Android 11+, prioritize MANAGE_EXTERNAL_STORAGE (if not granted, don't request media permissions to avoid warnings)
+        // On Android 10 and below, request READ_EXTERNAL_STORAGE
+        val hasManageStorage = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            android.os.Environment.isExternalStorageManager()
         } else {
-            // Android 10+ - permission is optional but can still be requested
-            android.util.Log.d("LauncherActivity", "Requesting READ_EXTERNAL_STORAGE permission (optional on Android 10+)")
+            false
         }
         
-        requestStoragePermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        // Request Manage All Files permission (Android 11+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            if (!hasManageStorage) {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                    }
+                    requestManageStoragePermissionLauncher.launch(intent)
+                    // Don't request media permissions if we're requesting MANAGE_EXTERNAL_STORAGE
+                    // to avoid "permission ignored" warnings - MANAGE_EXTERNAL_STORAGE covers everything
+                } catch (e: Exception) {
+                    // Fallback for devices that don't support the above intent
+                    try {
+                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        requestManageStoragePermissionLauncher.launch(intent)
+                    } catch (e2: Exception) {
+                        android.util.Log.d("LauncherActivity", "MANAGE_EXTERNAL_STORAGE not available, requesting media permissions instead")
+                        // If MANAGE_EXTERNAL_STORAGE is not available, fall through to request media permissions
+                        requestMediaPermissionsIfNeeded()
+                    }
+                }
+            }
+        } else {
+            // Android 10 and below - request READ_EXTERNAL_STORAGE
+            requestMediaPermissionsIfNeeded()
+        }
+    }
+    
+    private fun requestMediaPermissionsIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ uses granular media permissions
+            if (checkSelfPermission(android.Manifest.permission.READ_MEDIA_IMAGES) 
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestMediaImagesPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_IMAGES)
+            }
+        } else {
+            // Android 12 and below use READ_EXTERNAL_STORAGE
+            if (checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) 
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestStoragePermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
     }
     
     private fun setupFragments() {
