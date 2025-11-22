@@ -55,7 +55,10 @@ object BlurHelper {
             setBackgroundColor(0xCC000000.toInt()) // Semi-transparent dark overlay (80% opacity)
             alpha = 0f
             visibility = View.GONE
-            // Add click listener to dismiss when clicking outside
+            // Critical: Don't block touches when hidden
+            isClickable = false
+            isFocusable = false
+            // Add click listener to dismiss when clicking outside (only when visible)
             setOnClickListener {
                 // Do nothing - menu will handle dismissal
             }
@@ -69,6 +72,8 @@ object BlurHelper {
      */
     fun showBlurOverlay(overlay: View) {
         overlay.visibility = View.VISIBLE
+        overlay.isClickable = true
+        overlay.isFocusable = true
         overlay.animate()
             .alpha(1f)
             .setDuration(200)
@@ -79,6 +84,8 @@ object BlurHelper {
      * Hides blur overlay with animation
      */
     fun hideBlurOverlay(overlay: View) {
+        overlay.isClickable = false
+        overlay.isFocusable = false
         overlay.animate()
             .alpha(0f)
             .setDuration(200)
