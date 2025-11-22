@@ -181,6 +181,9 @@ class LauncherActivity : AppCompatActivity() {
             } else {
                 android.util.Log.w("LauncherActivity", "Could not get wallpaper drawable")
             }
+            
+            // Add top padding to the whole launcher to avoid status bar overlap
+            addTopPaddingToLauncher()
         } catch (e: Exception) {
             android.util.Log.e("LauncherActivity", "Error loading wallpaper: ${e.message}", e)
         }
