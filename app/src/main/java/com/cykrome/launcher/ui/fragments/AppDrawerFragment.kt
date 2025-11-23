@@ -1,12 +1,17 @@
 package com.cykrome.launcher.ui.fragments
 
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.cykrome.launcher.R
@@ -15,6 +20,7 @@ import com.cykrome.launcher.model.AppInfo
 import com.cykrome.launcher.ui.adapters.AppIconAdapter
 import com.cykrome.launcher.util.AppLoader
 import com.google.android.material.tabs.TabLayoutMediator
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.launch
 
 class AppDrawerFragment : Fragment() {
@@ -23,6 +29,12 @@ class AppDrawerFragment : Fragment() {
     private lateinit var drawerTabs: com.google.android.material.tabs.TabLayout
     private lateinit var preferences: LauncherPreferences
     private var apps: List<AppInfo> = emptyList()
+    private var searchInput: TextInputEditText? = null
+    private var searchResultsContainer: ViewGroup? = null
+    private var searchResultsRecyclerView: RecyclerView? = null
+    private var searchClearButton: View? = null
+    private var allApps: List<AppInfo> = emptyList()
+    private var searchAdapter: AppIconAdapter? = null
     
     companion object {
         fun newInstance(): AppDrawerFragment {
@@ -44,9 +56,16 @@ class AppDrawerFragment : Fragment() {
         preferences = LauncherPreferences(requireContext())
         drawerPager = view.findViewById(R.id.drawerPager)
         drawerTabs = view.findViewById(R.id.drawerTabs)
+        searchInput = view.findViewById(R.id.drawerSearchInput)
+        searchResultsContainer = view.findViewById(R.id.searchResultsContainer)
+        searchResultsRecyclerView = view.findViewById(R.id.searchResultsRecyclerView)
+        searchClearButton = view.findViewById(R.id.drawerSearchClear)
         
         // Add top padding to AppBarLayout to account for status bar
         adjustDrawerTopPadding(view)
+        
+        // Set up search functionality
+        setupSearch()
         
         loadApps()
         
@@ -55,6 +74,220 @@ class AppDrawerFragment : Fragment() {
         
         // Close drawer on outside click (only if clicking on empty space, not on apps)
         // Removed to prevent accidental closes
+    }
+    
+    private fun setupSearch() {
+        // Set up search results RecyclerView
+        searchResultsRecyclerView?.layoutManager = LinearLayoutManager(requireContext())
+        
+        // Handle back button press - clear search if search input has focus
+        val backCallback = object : OnBackPressedCallback(false) {
+            override fun handleOnBackPressed() {
+                if (searchInput?.hasFocus() == true || !searchInput?.text.isNullOrEmpty()) {
+                    // Search input has focus or has text - clear search instead of closing drawer
+                    searchInput?.clearFocus()
+                    searchInput?.setText("")
+                    val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    imm.hideSoftInputFromWindow(searchInput?.windowToken, 0)
+                } else {
+                    // No search active, let normal back behavior close drawer
+                    isEnabled = false
+                    requireActivity().onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
+        
+        searchInput?.let { input ->
+            // Set up text change listener for real-time search and back callback state
+            input.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    val query = s?.toString() ?: ""
+                    filterApps(query)
+                    // Enable/disable back callback based on search state
+                    backCallback.isEnabled = !query.isEmpty() || input.hasFocus()
+                }
+                
+                override fun afterTextChanged(s: Editable?) {}
+            })
+            
+            // Show keyboard when focused and update back callback state
+            input.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                }
+                // Update back callback state
+                backCallback.isEnabled = hasFocus || !input.text.isNullOrEmpty()
+            }
+        }
+        
+        // Set up clear button
+        searchClearButton?.setOnClickListener {
+            searchInput?.setText("")
+            searchInput?.requestFocus()
+        }
+    }
+    
+    private fun filterApps(query: String) {
+        if (query.isEmpty()) {
+            // Hide search results, show normal drawer
+            searchResultsContainer?.visibility = View.GONE
+            drawerPager.visibility = View.VISIBLE
+            drawerTabs.visibility = View.VISIBLE
+            searchClearButton?.visibility = View.GONE
+            // Clear focus from search input
+            searchInput?.clearFocus()
+        } else {
+            // Show search results, hide normal drawer
+            searchResultsContainer?.visibility = View.VISIBLE
+            drawerPager.visibility = View.GONE
+            drawerTabs.visibility = View.GONE
+            searchClearButton?.visibility = View.VISIBLE
+            
+            // Filter apps
+            val filtered = allApps.filter {
+                it.label.contains(query, ignoreCase = true) ||
+                it.packageName.contains(query, ignoreCase = true)
+            }
+            
+            // Create search results with apps and suggestions
+            val searchResults = mutableListOf<SearchResultItem>()
+            
+            // Add app results
+            filtered.take(5).forEach { app ->
+                searchResults.add(SearchResultItem(SearchResultItem.Type.APP, app, null))
+            }
+            
+            // Add text suggestions (simple implementation - can be enhanced later)
+            val suggestions = generateTextSuggestions(query)
+            suggestions.forEach { suggestion ->
+                searchResults.add(SearchResultItem(SearchResultItem.Type.TEXT_SUGGESTION, null, suggestion))
+            }
+            
+            // Update adapter
+            val adapter = SearchResultsAdapter(searchResults, preferences, requireContext())
+            adapter.onAppClick = { app ->
+                val intent = requireContext().packageManager.getLaunchIntentForPackage(app.packageName)
+                if (intent != null) {
+                    requireContext().startActivity(intent)
+                    (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
+                }
+            }
+            adapter.onSuggestionClick = { suggestion ->
+                // Handle suggestion click - for now, just set it as search text
+                searchInput?.setText(suggestion)
+                searchInput?.setSelection(suggestion.length)
+            }
+            searchResultsRecyclerView?.adapter = adapter
+        }
+    }
+    
+    private fun generateTextSuggestions(query: String): List<String> {
+        // Generate simple suggestions based on query
+        // In a real implementation, this could use a search API or local database
+        val suggestions = mutableListOf<String>()
+        
+        // Add query variations
+        if (query.length > 2) {
+            suggestions.add("$query chapter 1")
+            suggestions.add("$query sambad")
+            suggestions.add("lovable")
+            suggestions.add("${query} time now")
+        }
+        
+        return suggestions.take(5)
+    }
+    
+    private data class SearchResultItem(
+        val type: Type,
+        val app: AppInfo?,
+        val suggestion: String?
+    ) {
+        enum class Type {
+            APP,
+            TEXT_SUGGESTION
+        }
+    }
+    
+    private class SearchResultsAdapter(
+        private val items: List<SearchResultItem>,
+        private val preferences: LauncherPreferences,
+        private val context: android.content.Context
+    ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+        
+        var onAppClick: ((AppInfo) -> Unit)? = null
+        var onSuggestionClick: ((String) -> Unit)? = null
+        
+        override fun getItemViewType(position: Int): Int {
+            return when (items[position].type) {
+                SearchResultItem.Type.APP -> 0
+                SearchResultItem.Type.TEXT_SUGGESTION -> 1
+            }
+        }
+        
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            return when (viewType) {
+                0 -> {
+                    // App item
+                    val view = LayoutInflater.from(parent.context)
+                        .inflate(R.layout.item_search_app, parent, false)
+                    AppViewHolder(view)
+                }
+                1 -> {
+                    // Text suggestion item
+                    val view = LayoutInflater.from(parent.context)
+                        .inflate(R.layout.item_search_suggestion, parent, false)
+                    SuggestionViewHolder(view)
+                }
+                else -> throw IllegalArgumentException("Unknown view type")
+            }
+        }
+        
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            when (val item = items[position]) {
+                is SearchResultItem -> {
+                    when (item.type) {
+                        SearchResultItem.Type.APP -> {
+                            (holder as AppViewHolder).bind(item.app!!, onAppClick)
+                        }
+                        SearchResultItem.Type.TEXT_SUGGESTION -> {
+                            (holder as SuggestionViewHolder).bind(item.suggestion!!, onSuggestionClick)
+                        }
+                    }
+                }
+            }
+        }
+        
+        override fun getItemCount(): Int = items.size
+        
+        class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            private val iconView = itemView.findViewById<android.widget.ImageView>(R.id.appIcon)
+            private val labelView = itemView.findViewById<android.widget.TextView>(R.id.appLabel)
+            
+            fun bind(app: AppInfo, onAppClick: ((AppInfo) -> Unit)?) {
+                iconView?.setImageDrawable(app.icon)
+                labelView?.text = app.label
+                
+                itemView.setOnClickListener {
+                    onAppClick?.invoke(app)
+                }
+            }
+        }
+        
+        class SuggestionViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+            fun bind(suggestion: String, onSuggestionClick: ((String) -> Unit)?) {
+                val textView = itemView.findViewById<android.widget.TextView>(R.id.suggestionText)
+                textView?.text = suggestion
+                
+                itemView.setOnClickListener {
+                    onSuggestionClick?.invoke(suggestion)
+                }
+            }
+        }
     }
     
     private fun adjustDrawerTopPadding(view: View) {
@@ -193,7 +426,16 @@ class AppDrawerFragment : Fragment() {
     private fun loadApps() {
         lifecycleScope.launch {
             apps = AppLoader.loadApps(requireContext(), preferences.hiddenApps)
+            allApps = apps // Store all apps for search
             setupDrawer()
+        }
+    }
+    
+    fun focusSearchInput() {
+        searchInput?.requestFocus()
+        searchInput?.post {
+            val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(searchInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
         }
     }
     
