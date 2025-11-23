@@ -3,9 +3,12 @@ package com.cykrome.launcher.ui.fragments
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -15,10 +18,14 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.cykrome.launcher.R
 import com.cykrome.launcher.data.LauncherPreferences
 import com.cykrome.launcher.model.AppInfo
+import com.cykrome.launcher.ui.adapters.AppIconAdapter
 import com.cykrome.launcher.util.AppLoader
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.launch
 
 class CardsFragment : Fragment() {
@@ -27,6 +34,12 @@ class CardsFragment : Fragment() {
     private var weatherCardEnabled = false
     private var contactCardsEnabled = false
     private lateinit var preferences: LauncherPreferences
+    private lateinit var searchInput: TextInputEditText
+    private lateinit var searchResults: RecyclerView
+    private lateinit var lastUsedAppsTitle: TextView
+    private lateinit var lastUsedAppsScrollView: View
+    private var allApps: List<AppInfo> = emptyList()
+    private var searchAdapter: AppIconAdapter? = null
     
     companion object {
         fun newInstance(): CardsFragment {
@@ -47,20 +60,21 @@ class CardsFragment : Fragment() {
         
         preferences = LauncherPreferences(requireContext())
         
+        searchInput = view.findViewById(R.id.searchInput)
+        searchResults = view.findViewById(R.id.searchResults)
+        lastUsedAppsTitle = view.findViewById(R.id.lastUsedAppsTitle)
+        lastUsedAppsScrollView = view.findViewById(R.id.lastUsedAppsScrollView)
+        val menuButton = view.findViewById<View>(R.id.menuButton)
+        val settingsButton = view.findViewById<View>(R.id.settingsButton)
+        val lastUsedAppsContainer = view.findViewById<LinearLayout>(R.id.lastUsedAppsContainer)
         val calendarSwitch = view.findViewById<Switch>(R.id.calendarCardSwitch)
         val weatherSwitch = view.findViewById<Switch>(R.id.weatherCardSwitch)
         val contactCardsSwitch = view.findViewById<Switch>(R.id.contactCardsSwitch)
         val dismissButton = view.findViewById<View>(R.id.dismissButton)
         val grantPermissionsButton = view.findViewById<View>(R.id.grantPermissionsButton)
-        val searchBar = view.findViewById<View>(R.id.searchBar)
-        val menuButton = view.findViewById<View>(R.id.menuButton)
-        val settingsButton = view.findViewById<View>(R.id.settingsButton)
-        val lastUsedAppsContainer = view.findViewById<LinearLayout>(R.id.lastUsedAppsContainer)
         
-        // Set up search bar
-        searchBar?.setOnClickListener {
-            (activity as? com.cykrome.launcher.ui.LauncherActivity)?.openSearch()
-        }
+        // Set up search input
+        setupSearchInput()
         
         // Set up menu button (3 dots) beside search bar
         menuButton?.setOnClickListener { v ->
@@ -71,6 +85,9 @@ class CardsFragment : Fragment() {
         settingsButton?.setOnClickListener {
             (activity as? com.cykrome.launcher.ui.LauncherActivity)?.openSettings()
         }
+        
+        // Load all apps for search
+        loadAllApps()
         
         // Load last used apps
         loadLastUsedApps(lastUsedAppsContainer)
@@ -514,6 +531,68 @@ class CardsFragment : Fragment() {
             } catch (e: Exception) {
                 android.util.Log.e("CardsFragment", "Error loading last used apps: ${e.message}", e)
             }
+        }
+    }
+    
+    private fun setupSearchInput() {
+        // Set up search results RecyclerView
+        searchResults.layoutManager = GridLayoutManager(requireContext(), 4)
+        
+        // Set up text change listener
+        searchInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                filterApps(s.toString())
+            }
+            
+            override fun afterTextChanged(s: Editable?) {}
+        })
+        
+        // Show keyboard when search input is focused
+        searchInput.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+        }
+        
+        // Request focus when clicked
+        searchInput.setOnClickListener {
+            searchInput.requestFocus()
+            val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+    
+    private fun loadAllApps() {
+        lifecycleScope.launch {
+            try {
+                allApps = AppLoader.loadApps(requireContext(), preferences.hiddenApps)
+            } catch (e: Exception) {
+                android.util.Log.e("CardsFragment", "Error loading apps: ${e.message}", e)
+            }
+        }
+    }
+    
+    private fun filterApps(query: String) {
+        if (query.isEmpty()) {
+            // Hide search results, show last used apps
+            searchResults.visibility = View.GONE
+            lastUsedAppsTitle.visibility = View.VISIBLE
+            lastUsedAppsScrollView.visibility = View.VISIBLE
+        } else {
+            // Show search results, hide last used apps
+            val filtered = allApps.filter {
+                it.label.contains(query, ignoreCase = true) ||
+                it.packageName.contains(query, ignoreCase = true)
+            }
+            
+            searchAdapter = AppIconAdapter(filtered.toMutableList(), preferences, requireContext())
+            searchResults.adapter = searchAdapter
+            searchResults.visibility = View.VISIBLE
+            lastUsedAppsTitle.visibility = View.GONE
+            lastUsedAppsScrollView.visibility = View.GONE
         }
     }
     
