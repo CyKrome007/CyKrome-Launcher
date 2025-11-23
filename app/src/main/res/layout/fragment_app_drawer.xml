@@ -90,18 +90,31 @@
                 android:paddingBottom="8dp" />
         </FrameLayout>
 
-        <com.google.android.material.tabs.TabLayout
-            android:id="@+id/drawerTabs"
+        <HorizontalScrollView
+            android:id="@+id/drawerTabsScrollView"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="?attr/colorPrimary"
-            android:paddingTop="0dp"
-            android:paddingBottom="0dp"
-            android:paddingStart="0dp"
-            android:paddingEnd="0dp"
-            android:layout_marginTop="0dp"
-            app:tabGravity="fill"
-            app:tabMode="scrollable" />
+            android:scrollbars="none"
+            android:fadeScrollbars="false"
+            android:fillViewport="true">
+            
+            <com.google.android.material.tabs.TabLayout
+                android:id="@+id/drawerTabs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/drawer_tab_background"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
+                android:paddingStart="0dp"
+                android:paddingEnd="0dp"
+                android:layout_marginTop="0dp"
+                app:tabGravity="center"
+                app:tabMode="scrollable"
+                app:tabBackground="@drawable/drawer_tab_selector"
+                app:tabIndicatorHeight="0dp"
+                app:tabTextColor="#FFFFFF"
+                app:tabSelectedTextColor="#000000" />
+        </HorizontalScrollView>
 
     </com.google.android.material.appbar.AppBarLayout>
 
