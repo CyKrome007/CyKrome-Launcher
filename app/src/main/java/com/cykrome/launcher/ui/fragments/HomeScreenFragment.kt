@@ -103,11 +103,34 @@ class HomeScreenFragment : Fragment() {
             val adapter = DesktopPageAdapter(this, homeScreenApps, appItems, preferences, totalPages)
             homePager.adapter = adapter
             
-            // Show page indicator - always show if there are multiple pages
+            // Hide dock on Cards page (position 0), show on home screen pages
+            val dockContainer = view?.findViewById<View>(R.id.dockContainer)
+            
+            // Set initial page to 1 (first home screen page, Cards is at 0)
+            // Use post to ensure ViewPager2 is fully initialized
+            homePager.post {
+                if (adapter.itemCount > 1) {
+                    homePager.setCurrentItem(1, false)
+                    // Ensure dock is visible on home screen (position 1)
+                    dockContainer?.visibility = View.VISIBLE
+                }
+            }
+            
+            // Register page change callback to hide/show dock
+            homePager.registerOnPageChangeCallback(object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {
+                override fun onPageSelected(position: Int) {
+                    super.onPageSelected(position)
+                    // Hide dock on Cards page (position 0), show on home screen pages
+                    dockContainer?.visibility = if (position == 0) View.GONE else View.VISIBLE
+                }
+            })
+            
+            // Show page indicator - always show if there are multiple pages (excluding Cards page)
             val pageIndicator = view?.findViewById<com.google.android.material.tabs.TabLayout>(R.id.pageIndicator)
             val pageCount = adapter.itemCount
+            val homeScreenPageCount = pageCount - 1 // Exclude Cards page
             if (pageIndicator != null) {
-                if (pageCount > 1) {
+                if (homeScreenPageCount > 1) {
                     pageIndicator.visibility = View.VISIBLE
                     // Clear existing tabs and mediator
                     pageIndicator.removeAllTabs()
@@ -120,19 +143,24 @@ class HomeScreenFragment : Fragment() {
                     } catch (e: Exception) {
                         // Ignore if no mediator exists
                     }
-                    // Add tabs for each page
-                    for (i in 0 until pageCount) {
+                    // Add tabs for each home screen page (excluding Cards)
+                    for (i in 0 until homeScreenPageCount) {
                         pageIndicator.addTab(pageIndicator.newTab())
                     }
-                    // Attach mediator to sync with ViewPager2
-                    com.google.android.material.tabs.TabLayoutMediator(pageIndicator, homePager) { _, _ -> }.attach()
+                    // Attach mediator to sync with ViewPager2, offset by 1 to skip Cards page
+                    com.google.android.material.tabs.TabLayoutMediator(pageIndicator, homePager) { tab, position ->
+                        // Map ViewPager2 position to TabLayout position (skip Cards page at position 0)
+                        if (position > 0) {
+                            tab.text = ""
+                        }
+                    }.attach()
                 } else {
                     pageIndicator.visibility = View.GONE
                 }
             }
             
-            // Enable/disable user input based on page count
-            // If only one page, disable horizontal scrolling to allow vertical scrolling in RecyclerView
+            // Enable/disable user input based on page count (including Cards page)
+            // If only Cards page, disable horizontal scrolling to allow vertical scrolling in RecyclerView
             homePager.isUserInputEnabled = pageCount > 1
             
             // ViewPager2 is horizontal by default - keep it horizontal for desktop pages
@@ -786,20 +814,28 @@ class DesktopPageAdapter(
     private val itemsPerPage = preferences.homeGridColumns * preferences.homeGridRows
     
     override fun getItemCount(): Int {
-        // Return the total number of pages (at least 1)
-        return totalPages.coerceAtLeast(1)
+        // Return total pages + 1 for Cards page (Cards is at position 0)
+        return totalPages.coerceAtLeast(1) + 1
     }
     
     override fun createFragment(position: Int): Fragment {
+        // Position 0 is the Cards page
+        if (position == 0) {
+            return CardsFragment.newInstance()
+        }
+        
+        // Position 1+ are home screen pages (adjust page number by -1)
+        val homeScreenPage = position - 1
+        
         // Get apps for this specific page
         val pageApps = appItems
-            .filter { it.page == position }
+            .filter { it.page == homeScreenPage }
             .mapNotNull { item ->
                 // Find the corresponding AppInfo
                 allApps.find { it.packageName == item.packageName && it.activityName == item.activityName }
             }
         
-        return DesktopPageFragment.newInstance(pageApps, appItems.filter { it.page == position }, preferences)
+        return DesktopPageFragment.newInstance(pageApps, appItems.filter { it.page == homeScreenPage }, preferences)
     }
 }
 
