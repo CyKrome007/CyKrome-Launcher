@@ -12,17 +12,6 @@
         android:clipToPadding="false"
         android:clipChildren="false" />
 
-    <com.google.android.material.tabs.TabLayout
-        android:id="@+id/pageIndicator"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="100dp"
-        android:visibility="visible"
-        app:tabBackground="@drawable/tab_indicator"
-        app:tabGravity="center"
-        app:tabIndicatorHeight="0dp" />
-
     <!-- Dock at the bottom -->
     <include
         android:id="@+id/dockContainer"
@@ -30,6 +19,30 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal" />
+
+    <!-- Page Indicator above dock -->
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/pageIndicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="100dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:visibility="visible"
+        android:background="@drawable/page_indicator_background"
+        app:tabBackground="@drawable/tab_indicator"
+        app:tabGravity="center"
+        app:tabIndicatorHeight="0dp"
+        app:tabPaddingStart="12dp"
+        app:tabPaddingEnd="12dp"
+        app:tabPaddingTop="0dp"
+        app:tabPaddingBottom="0dp"
+        app:tabMinWidth="10dp"
+        app:tabMaxWidth="10dp"
+        app:tabContentStart="0dp" />
 
 </FrameLayout>
 

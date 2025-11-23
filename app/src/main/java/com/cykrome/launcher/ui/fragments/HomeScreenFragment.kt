@@ -116,48 +116,82 @@ class HomeScreenFragment : Fragment() {
                 }
             }
             
-            // Register page change callback to hide/show dock
+            // Show page indicator - always show (even for 1 page) above the dock
+            val pageIndicator = view?.findViewById<com.google.android.material.tabs.TabLayout>(R.id.pageIndicator)
+            val pageCount = adapter.itemCount
+            val homeScreenPageCount = pageCount - 1 // Exclude Cards page (position 0 is Cards, 1+ are home screens)
+            
+            if (pageIndicator != null) {
+                // Initially show/hide based on current page (hide on Cards page)
+                val initialPage = homePager.currentItem
+                pageIndicator.visibility = if (initialPage == 0) View.GONE else View.VISIBLE
+                
+                // Clear existing tabs and mediator
+                pageIndicator.removeAllTabs()
+                // Remove any existing mediator
+                try {
+                    val mediatorField = pageIndicator.javaClass.getDeclaredField("mediator")
+                    mediatorField.isAccessible = true
+                    val mediator = mediatorField.get(pageIndicator)
+                    mediator?.javaClass?.getDeclaredMethod("detach")?.invoke(mediator)
+                } catch (e: Exception) {
+                    // Ignore if no mediator exists
+                }
+                // Add tabs for each home screen page (excluding Cards)
+                for (i in 0 until homeScreenPageCount) {
+                    pageIndicator.addTab(pageIndicator.newTab())
+                }
+                
+                // Post to ensure tabs are laid out, then fix their dimensions to maintain circular shape
+                pageIndicator.post {
+                    for (i in 0 until pageIndicator.tabCount) {
+                        val tab = pageIndicator.getTabAt(i)
+                        tab?.let {
+                            try {
+                                val tabView = it.view
+                                val density = resources.displayMetrics.density
+                                val size = (10 * density).toInt()
+                                // Set fixed dimensions to maintain circular shape
+                                tabView.minimumHeight = size
+                                tabView.minimumWidth = size
+                                // Force layout params to maintain square shape
+                                val layoutParams = tabView.layoutParams
+                                if (layoutParams != null) {
+                                    layoutParams.height = size
+                                    layoutParams.width = size
+                                    tabView.layoutParams = layoutParams
+                                } else {
+                                    // Create new layout params if null
+                                    val newParams = android.view.ViewGroup.LayoutParams(size, size)
+                                    tabView.layoutParams = newParams
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("HomeScreenFragment", "Error setting tab dimensions: ${e.message}")
+                            }
+                        }
+                    }
+                }
+                
+                // Set initial tab selection
+                if (initialPage > 0 && initialPage - 1 < homeScreenPageCount) {
+                    pageIndicator.getTabAt(initialPage - 1)?.select()
+                }
+            }
+            
+            // Register page change callback to hide/show dock, page indicator, and update tab selection
             homePager.registerOnPageChangeCallback(object : androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback() {
                 override fun onPageSelected(position: Int) {
                     super.onPageSelected(position)
                     // Hide dock on Cards page (position 0), show on home screen pages
                     dockContainer?.visibility = if (position == 0) View.GONE else View.VISIBLE
+                    // Hide page indicator on Cards page (position 0), show on home screen pages
+                    pageIndicator?.visibility = if (position == 0) View.GONE else View.VISIBLE
+                    // Update tab selection for home screen pages only (map position 1 -> tab 0, position 2 -> tab 1, etc.)
+                    if (position > 0 && position - 1 < homeScreenPageCount) {
+                        pageIndicator?.getTabAt(position - 1)?.select()
+                    }
                 }
             })
-            
-            // Show page indicator - always show if there are multiple pages (excluding Cards page)
-            val pageIndicator = view?.findViewById<com.google.android.material.tabs.TabLayout>(R.id.pageIndicator)
-            val pageCount = adapter.itemCount
-            val homeScreenPageCount = pageCount - 1 // Exclude Cards page
-            if (pageIndicator != null) {
-                if (homeScreenPageCount > 1) {
-                    pageIndicator.visibility = View.VISIBLE
-                    // Clear existing tabs and mediator
-                    pageIndicator.removeAllTabs()
-                    // Remove any existing mediator
-                    try {
-                        val mediatorField = pageIndicator.javaClass.getDeclaredField("mediator")
-                        mediatorField.isAccessible = true
-                        val mediator = mediatorField.get(pageIndicator)
-                        mediator?.javaClass?.getDeclaredMethod("detach")?.invoke(mediator)
-                    } catch (e: Exception) {
-                        // Ignore if no mediator exists
-                    }
-                    // Add tabs for each home screen page (excluding Cards)
-                    for (i in 0 until homeScreenPageCount) {
-                        pageIndicator.addTab(pageIndicator.newTab())
-                    }
-                    // Attach mediator to sync with ViewPager2, offset by 1 to skip Cards page
-                    com.google.android.material.tabs.TabLayoutMediator(pageIndicator, homePager) { tab, position ->
-                        // Map ViewPager2 position to TabLayout position (skip Cards page at position 0)
-                        if (position > 0) {
-                            tab.text = ""
-                        }
-                    }.attach()
-                } else {
-                    pageIndicator.visibility = View.GONE
-                }
-            }
             
             // Enable/disable user input based on page count (including Cards page)
             // If only Cards page, disable horizontal scrolling to allow vertical scrolling in RecyclerView
