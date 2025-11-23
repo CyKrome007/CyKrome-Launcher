@@ -1264,6 +1264,14 @@ class LauncherActivity : AppCompatActivity() {
     
     override fun onBackPressed() {
         when {
+            // Check for home screen search overlay first
+            homeScreenFragment?.let { fragment ->
+                val overlay = fragment.view?.findViewById<View>(R.id.searchResultsOverlay)
+                overlay?.visibility == View.VISIBLE
+            } == true -> {
+                // Call fragment's method to properly close the overlay
+                homeScreenFragment?.closeSearchOverlay()
+            }
             findViewById<View>(R.id.searchContainer).visibility == View.VISIBLE -> {
                 closeSearch()
             }
