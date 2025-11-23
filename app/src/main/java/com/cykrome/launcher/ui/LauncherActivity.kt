@@ -45,6 +45,13 @@ class LauncherActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         android.util.Log.d("LauncherActivity", "READ_EXTERNAL_STORAGE permission: $isGranted")
+        // Re-check and proceed with initialization if granted
+        if (isGranted) {
+            checkAndRequestStoragePermission()
+        } else {
+            // Still not granted, keep blocking
+            showStoragePermissionBlockingOverlay()
+        }
     }
     
     private val requestManageStoragePermissionLauncher = registerForActivityResult(
@@ -53,13 +60,27 @@ class LauncherActivity : AppCompatActivity() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             val hasPermission = android.os.Environment.isExternalStorageManager()
             android.util.Log.d("LauncherActivity", "MANAGE_EXTERNAL_STORAGE permission: $hasPermission")
+            // Re-check permission and proceed with initialization if granted
+            checkAndRequestStoragePermission()
         }
     }
+    
+    private var permissionBlockingOverlay: View? = null
     
     private val requestMediaImagesPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         android.util.Log.d("LauncherActivity", "READ_MEDIA_IMAGES permission: $isGranted")
+        // After media images permission, request videos permission
+        requestMediaVideosPermission()
+    }
+    
+    private val requestMediaVideosPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        android.util.Log.d("LauncherActivity", "READ_MEDIA_VIDEO permission: $isGranted")
+        // After all media permissions, proceed with initialization
+        checkAndRequestMediaPermissions()
     }
     
     private val requestPhoneStatePermissionLauncher = registerForActivityResult(
@@ -96,6 +117,36 @@ class LauncherActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         
         try {
+            // Configure window for launcher
+            configureWindow()
+            
+            setContentView(R.layout.activity_launcher)
+            
+            // Check storage permission first - block if not granted
+            // Use post to ensure views are ready before showing overlay
+            findViewById<ViewGroup>(R.id.rootLayout)?.post {
+                checkAndRequestStoragePermission()
+            } ?: run {
+                // Fallback if rootLayout is null
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    checkAndRequestStoragePermission()
+                }, 100)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            android.util.Log.e("LauncherActivity", "Error in onCreate: ${e.message}", e)
+            // Show error and finish
+            try {
+                android.widget.Toast.makeText(this, "Error initializing launcher: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            } catch (e2: Exception) {
+                android.util.Log.e("LauncherActivity", "Error showing toast: ${e2.message}", e2)
+            }
+            finish()
+        }
+    }
+    
+    private fun initializeLauncher() {
+        try {
             // Check if this launcher is set as default when launched as HOME
             val isHomeIntent = intent.categories?.contains(Intent.CATEGORY_HOME) == true
             if (isHomeIntent && !isDefaultLauncher()) {
@@ -103,11 +154,6 @@ class LauncherActivity : AppCompatActivity() {
                 showSetDefaultLauncherDialog()
                 return
             }
-            
-            // Configure window for launcher
-            configureWindow()
-            
-            setContentView(R.layout.activity_launcher)
             
             // Create blur overlay for context menus
             val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
@@ -135,7 +181,7 @@ class LauncherActivity : AppCompatActivity() {
             // Check for root and grant permissions if available
             checkAndGrantRootPermissions()
             
-            // Request all required permissions
+            // Request other permissions (storage permission already checked and blocked if needed)
             requestAllPermissions()
             
             setupFragments()
@@ -151,8 +197,7 @@ class LauncherActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            android.util.Log.e("LauncherActivity", "Error in onCreate: ${e.message}", e)
-            // Show error and finish
+            android.util.Log.e("LauncherActivity", "Error in initializeLauncher: ${e.message}", e)
             try {
                 android.widget.Toast.makeText(this, "Error initializing launcher: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             } catch (e2: Exception) {
@@ -161,6 +206,7 @@ class LauncherActivity : AppCompatActivity() {
             finish()
         }
     }
+            
     
     private fun loadWallpaper() {
         try {
@@ -369,6 +415,8 @@ class LauncherActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
+        // Re-check storage permission when activity resumes (e.g., user returns from settings)
+        checkAndRequestStoragePermission()
         // Restore window visibility when resumed
         try {
             window.decorView.alpha = 1f
@@ -448,36 +496,8 @@ class LauncherActivity : AppCompatActivity() {
     }
     
     private fun requestAllPermissions() {
-        // Request Phone permissions
-        if (checkSelfPermission(android.Manifest.permission.READ_PHONE_STATE) 
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPhoneStatePermissionLauncher.launch(android.Manifest.permission.READ_PHONE_STATE)
-        }
-        
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            if (checkSelfPermission(android.Manifest.permission.READ_PHONE_NUMBERS) 
-                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPhoneNumbersPermissionLauncher.launch(android.Manifest.permission.READ_PHONE_NUMBERS)
-            }
-        }
-        
-        // Request SMS permissions
-        if (checkSelfPermission(android.Manifest.permission.READ_SMS) 
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestReadSmsPermissionLauncher.launch(android.Manifest.permission.READ_SMS)
-        }
-        
-        if (checkSelfPermission(android.Manifest.permission.SEND_SMS) 
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestSendSmsPermissionLauncher.launch(android.Manifest.permission.SEND_SMS)
-        }
-        
-        if (checkSelfPermission(android.Manifest.permission.RECEIVE_SMS) 
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestReceiveSmsPermissionLauncher.launch(android.Manifest.permission.RECEIVE_SMS)
-        }
-        
-        // Request storage permissions
+        // Storage permission is already checked and blocked in checkAndRequestStoragePermission()
+        // Only request additional media permissions if MANAGE_EXTERNAL_STORAGE is already granted
         // On Android 11+, prioritize MANAGE_EXTERNAL_STORAGE (if not granted, don't request media permissions to avoid warnings)
         // On Android 10 and below, request READ_EXTERNAL_STORAGE
         val hasManageStorage = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -486,32 +506,15 @@ class LauncherActivity : AppCompatActivity() {
             false
         }
         
-        // Request Manage All Files permission (Android 11+)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            if (!hasManageStorage) {
-                try {
-                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                        data = android.net.Uri.parse("package:$packageName")
-                    }
-                    requestManageStoragePermissionLauncher.launch(intent)
-                    // Don't request media permissions if we're requesting MANAGE_EXTERNAL_STORAGE
-                    // to avoid "permission ignored" warnings - MANAGE_EXTERNAL_STORAGE covers everything
-                } catch (e: Exception) {
-                    // Fallback for devices that don't support the above intent
-                    try {
-                        val intent = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                        requestManageStoragePermissionLauncher.launch(intent)
-                    } catch (e2: Exception) {
-                        android.util.Log.d("LauncherActivity", "MANAGE_EXTERNAL_STORAGE not available, requesting media permissions instead")
-                        // If MANAGE_EXTERNAL_STORAGE is not available, fall through to request media permissions
-                        requestMediaPermissionsIfNeeded()
-                    }
-                }
-            }
-        } else {
+        // Only request additional media permissions if MANAGE_EXTERNAL_STORAGE is already granted
+        // (MANAGE_EXTERNAL_STORAGE covers everything, so no need for additional permissions)
+        if (!hasManageStorage && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
             // Android 10 and below - request READ_EXTERNAL_STORAGE
             requestMediaPermissionsIfNeeded()
         }
+        
+        // Note: Phone and SMS permissions are not requested automatically
+        // They can be requested later if needed by specific features
     }
     
     private fun requestMediaPermissionsIfNeeded() {
@@ -527,6 +530,273 @@ class LauncherActivity : AppCompatActivity() {
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 requestStoragePermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
             }
+        }
+    }
+    
+    /**
+     * Check and request storage permission immediately on startup.
+     * Shows blocking overlay and automatically opens settings if permission is not granted.
+     */
+    private fun checkAndRequestStoragePermission() {
+        android.util.Log.d("LauncherActivity", "Checking storage permission on startup...")
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val hasPermission = android.os.Environment.isExternalStorageManager()
+            android.util.Log.d("LauncherActivity", "MANAGE_EXTERNAL_STORAGE permission: $hasPermission")
+            
+            if (!hasPermission) {
+                // Show blocking overlay
+                showStoragePermissionBlockingOverlay()
+                // Automatically open settings to request permission
+                android.util.Log.d("LauncherActivity", "Opening settings to request storage permission")
+                requestManageStoragePermission()
+                // Don't proceed with initialization
+                return
+            } else {
+                // Storage permission granted, now check media permissions
+                android.util.Log.d("LauncherActivity", "Storage permission granted, checking media permissions")
+                checkAndRequestMediaPermissions()
+            }
+        } else {
+            // Android 10 and below - check READ_EXTERNAL_STORAGE
+            val hasPermission = checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == 
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            android.util.Log.d("LauncherActivity", "READ_EXTERNAL_STORAGE permission: $hasPermission")
+            
+            if (!hasPermission) {
+                showStoragePermissionBlockingOverlay()
+                // Automatically request permission
+                android.util.Log.d("LauncherActivity", "Requesting READ_EXTERNAL_STORAGE permission")
+                requestStoragePermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                // Don't proceed with initialization
+                return
+            } else {
+                android.util.Log.d("LauncherActivity", "Storage permission granted, checking media permissions")
+                checkAndRequestMediaPermissions()
+            }
+        }
+    }
+    
+    /**
+     * Check and request media permissions (photos and videos) on Android 13+
+     */
+    private fun checkAndRequestMediaPermissions() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ uses granular media permissions
+            val hasImagesPermission = checkSelfPermission(android.Manifest.permission.READ_MEDIA_IMAGES) == 
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            val hasVideosPermission = checkSelfPermission(android.Manifest.permission.READ_MEDIA_VIDEO) == 
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            
+            android.util.Log.d("LauncherActivity", "READ_MEDIA_IMAGES permission: $hasImagesPermission")
+            android.util.Log.d("LauncherActivity", "READ_MEDIA_VIDEO permission: $hasVideosPermission")
+            
+            if (!hasImagesPermission) {
+                // Request images permission first
+                android.util.Log.d("LauncherActivity", "Requesting READ_MEDIA_IMAGES permission")
+                requestMediaImagesPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_IMAGES)
+                return
+            } else if (!hasVideosPermission) {
+                // Request videos permission
+                android.util.Log.d("LauncherActivity", "Requesting READ_MEDIA_VIDEO permission")
+                requestMediaVideosPermission()
+                return
+            } else {
+                // All permissions granted, proceed with initialization
+                android.util.Log.d("LauncherActivity", "All permissions granted, proceeding with initialization")
+                hideStoragePermissionBlockingOverlay()
+                initializeLauncher()
+            }
+        } else {
+            // Android 12 and below - storage permission covers media access
+            android.util.Log.d("LauncherActivity", "Android 12 or below, storage permission covers media access")
+            hideStoragePermissionBlockingOverlay()
+            initializeLauncher()
+        }
+    }
+    
+    private fun requestMediaVideosPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.READ_MEDIA_VIDEO) != 
+                    android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestMediaVideosPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_VIDEO)
+            } else {
+                // Already granted, proceed with initialization
+                checkAndRequestMediaPermissions()
+            }
+        } else {
+            // Android 12 and below - storage permission covers media access
+            checkAndRequestMediaPermissions()
+        }
+    }
+    
+    /**
+     * Check for MANAGE_EXTERNAL_STORAGE permission and block launcher if not granted.
+     * Shows a blocking overlay that prevents using the launcher until permission is granted.
+     * @return true if permission is granted, false if not granted (and blocking overlay is shown)
+     */
+    private fun checkStoragePermissionAndBlock(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val hasPermission = android.os.Environment.isExternalStorageManager()
+            
+            if (!hasPermission) {
+                // Show blocking overlay
+                showStoragePermissionBlockingOverlay()
+                // Request permission
+                requestManageStoragePermission()
+                return false
+            } else {
+                // Permission granted, hide blocking overlay if it exists
+                hideStoragePermissionBlockingOverlay()
+                return true
+            }
+        } else {
+            // Android 10 and below - check READ_EXTERNAL_STORAGE
+            val hasPermission = checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == 
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            
+            if (!hasPermission) {
+                showStoragePermissionBlockingOverlay()
+                requestStoragePermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                return false
+            } else {
+                hideStoragePermissionBlockingOverlay()
+                return true
+            }
+        }
+    }
+    
+    private fun showStoragePermissionBlockingOverlay() {
+        if (permissionBlockingOverlay != null) {
+            android.util.Log.d("LauncherActivity", "Blocking overlay already showing")
+            return // Already showing
+        }
+        
+        android.util.Log.d("LauncherActivity", "Creating blocking overlay")
+        val rootLayout = findViewById<ViewGroup>(R.id.rootLayout) ?: run {
+            android.util.Log.e("LauncherActivity", "rootLayout is null, cannot show blocking overlay")
+            return
+        }
+        
+        // Create blocking overlay
+        permissionBlockingOverlay = android.widget.FrameLayout(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            setBackgroundColor(0xE0000000.toInt()) // Semi-transparent black
+            isClickable = true
+            isFocusable = true
+        }
+        
+        // Create dialog content
+        val dialogContent = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.CENTER
+                setMargins(
+                    (32 * resources.displayMetrics.density).toInt(),
+                    0,
+                    (32 * resources.displayMetrics.density).toInt(),
+                    0
+                )
+            }
+            setPadding(
+                (24 * resources.displayMetrics.density).toInt(),
+                (32 * resources.displayMetrics.density).toInt(),
+                (24 * resources.displayMetrics.density).toInt(),
+                (32 * resources.displayMetrics.density).toInt()
+            )
+            setBackgroundColor(0xFF2A2A2A.toInt())
+            elevation = 8f
+        }
+        
+        // Title
+        val title = android.widget.TextView(this).apply {
+            text = "Storage Permission Required"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 20f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = (16 * resources.displayMetrics.density).toInt()
+            }
+        }
+        
+        // Message
+        val message = android.widget.TextView(this).apply {
+            text = "CyKrome Launcher requires full storage access to function properly. Please grant the permission to continue."
+            setTextColor(0xFFCCCCCC.toInt())
+            textSize = 16f
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = (24 * resources.displayMetrics.density).toInt()
+            }
+        }
+        
+        // Grant Permission Button
+        val grantButton = android.widget.Button(this).apply {
+            text = "Grant Permission"
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xFF2196F3.toInt())
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                height = (48 * resources.displayMetrics.density).toInt()
+            }
+            setOnClickListener {
+                requestManageStoragePermission()
+            }
+        }
+        
+        dialogContent.addView(title)
+        dialogContent.addView(message)
+        dialogContent.addView(grantButton)
+        
+        permissionBlockingOverlay?.let { overlay ->
+            (overlay as? ViewGroup)?.addView(dialogContent)
+            rootLayout.addView(overlay)
+        }
+    }
+    
+    private fun hideStoragePermissionBlockingOverlay() {
+        permissionBlockingOverlay?.let {
+            val parent = it.parent as? ViewGroup
+            parent?.removeView(it)
+            permissionBlockingOverlay = null
+        }
+    }
+    
+    private fun requestManageStoragePermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = android.net.Uri.parse("package:$packageName")
+                }
+                requestManageStoragePermissionLauncher.launch(intent)
+            } catch (e: Exception) {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    requestManageStoragePermissionLauncher.launch(intent)
+                } catch (e2: Exception) {
+                    android.util.Log.e("LauncherActivity", "Could not open storage permission settings: ${e2.message}", e2)
+                    android.widget.Toast.makeText(
+                        this,
+                        "Please enable 'All files access' in Settings > Apps > CyKrome Launcher > Permissions",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        } else {
+            requestStoragePermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
     
