@@ -465,8 +465,59 @@ class AppDrawerFragment : Fragment() {
             TabLayoutMediator(drawerTabs, drawerPager) { tab, position ->
                 tab.text = categories[position].toString()
             }.attach()
+            
+            // Set up custom tab layout with centering and padding
+            setupDrawerTabsLayout(categories)
         } else {
             drawerTabs.visibility = View.GONE
+        }
+    }
+    
+    private fun setupDrawerTabsLayout(categories: List<Char>) {
+        // Find the HorizontalScrollView parent
+        val scrollView = view?.findViewById<android.widget.HorizontalScrollView>(R.id.drawerTabsScrollView)
+        
+        // Set up scroll listener to keep selected tab centered
+        drawerPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                super.onPageSelected(position)
+                // Scroll to center the selected tab
+                drawerTabs.post {
+                    val selectedTab = drawerTabs.getTabAt(position)
+                    selectedTab?.view?.let { tabView ->
+                        scrollView?.let { scroll ->
+                            // Calculate the position to scroll to center the tab
+                            val tabLeft = tabView.left
+                            val tabWidth = tabView.width
+                            val scrollWidth = scroll.width
+                            
+                            // Center the tab: scroll so that tab's center aligns with scroll view's center
+                            val tabCenter = tabLeft + (tabWidth / 2)
+                            val scrollCenter = scrollWidth / 2
+                            val scrollToX = tabCenter - scrollCenter
+                            
+                            scroll.smoothScrollTo(scrollToX.coerceAtLeast(0), 0)
+                        }
+                    }
+                }
+            }
+        })
+        
+        // Also center the initial selected tab
+        drawerTabs.post {
+            val currentPosition = drawerPager.currentItem
+            val selectedTab = drawerTabs.getTabAt(currentPosition)
+            selectedTab?.view?.let { tabView ->
+                scrollView?.let { scroll ->
+                    val tabLeft = tabView.left
+                    val tabWidth = tabView.width
+                    val scrollWidth = scroll.width
+                    val tabCenter = tabLeft + (tabWidth / 2)
+                    val scrollCenter = scrollWidth / 2
+                    val scrollToX = tabCenter - scrollCenter
+                    scroll.scrollTo(scrollToX.coerceAtLeast(0), 0)
+                }
+            }
         }
     }
     
