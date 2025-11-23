@@ -1,12 +1,16 @@
 package com.cykrome.launcher.ui.fragments
 
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.cykrome.launcher.R
@@ -14,6 +18,7 @@ import com.cykrome.launcher.data.LauncherPreferences
 import com.cykrome.launcher.model.AppInfo
 import com.cykrome.launcher.ui.adapters.AppIconAdapter
 import com.cykrome.launcher.util.AppLoader
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.launch
 
 class HomeScreenFragment : Fragment() {
@@ -21,6 +26,11 @@ class HomeScreenFragment : Fragment() {
     private lateinit var homePager: ViewPager2
     private lateinit var preferences: LauncherPreferences
     private var apps: List<AppInfo> = emptyList()
+    private var dockSearchInput: TextInputEditText? = null
+    private var searchResultsOverlay: ViewGroup? = null
+    private var searchResultsRecyclerView: RecyclerView? = null
+    private var allApps: List<AppInfo> = emptyList()
+    private var searchAdapter: AppIconAdapter? = null
     
     companion object {
         fun newInstance(): HomeScreenFragment {
@@ -55,6 +65,7 @@ class HomeScreenFragment : Fragment() {
             if (isAdded && view != null) {
                 setupHomePager()
                 setupDock(view)
+                setupDockSearch(view)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -390,6 +401,223 @@ class HomeScreenFragment : Fragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeScreenFragment", "Error setting up dock: ${e.message}", e)
+        }
+    }
+    
+    private fun setupDockSearch(view: View) {
+        try {
+            // Find search bar and overlay
+            val dockContainer = view.findViewById<ViewGroup>(R.id.dockContainer)
+            val dockSearchBar = dockContainer?.parent?.let { it as? ViewGroup }?.findViewById<View>(R.id.dockSearchBar)
+            searchResultsOverlay = view.findViewById(R.id.searchResultsOverlay)
+            
+            if (dockSearchBar != null && searchResultsOverlay != null) {
+                // Find RecyclerView inside overlay
+                searchResultsRecyclerView = searchResultsOverlay?.findViewById(R.id.searchResultsRecyclerView)
+                
+                // Set up search results RecyclerView
+                searchResultsRecyclerView?.layoutManager = GridLayoutManager(requireContext(), 4)
+                
+                // Load all apps for search
+                loadAllAppsForSearch()
+                
+                // Set up click listener to open search overlay
+                dockSearchBar.setOnClickListener {
+                    openSearchOverlay()
+                }
+                
+                // Close overlay when clicking outside
+                searchResultsOverlay?.setOnClickListener { v ->
+                    if (v.id == R.id.searchResultsOverlay) {
+                        closeSearchOverlay()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error setting up dock search: ${e.message}", e)
+        }
+    }
+    
+    private fun openSearchOverlay() {
+        try {
+            // Show search overlay
+            searchResultsOverlay?.visibility = View.VISIBLE
+            
+            // Create and show search input dialog/overlay
+            val overlayView = searchResultsOverlay
+            if (overlayView != null) {
+                // Check if search input already exists by tag
+                val existingInput = overlayView.findViewWithTag<TextInputEditText>("dockSearchInput")
+                if (existingInput == null) {
+                    // Create search input overlay
+                    createSearchInputOverlay(overlayView)
+                } else {
+                    // Focus existing input
+                    existingInput.requestFocus()
+                    val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.showSoftInput(existingInput, InputMethodManager.SHOW_IMPLICIT)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error opening search overlay: ${e.message}", e)
+        }
+    }
+    
+    private fun createSearchInputOverlay(overlayView: ViewGroup) {
+        try {
+            // Create search input container at the top of overlay
+            val searchContainer = android.widget.LinearLayout(requireContext()).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setPadding(
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (16 * resources.displayMetrics.density).toInt()
+                )
+                setBackgroundColor(0xFF1E3A5F.toInt())
+            }
+            
+            // Create search input
+            val searchInput = TextInputEditText(requireContext()).apply {
+                tag = "dockSearchInput"
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    height = (56 * resources.displayMetrics.density).toInt()
+                }
+                hint = "Search apps"
+                setTextColor(0xFFCCCCCC.toInt())
+                setHintTextColor(0xFFCCCCCC.toInt())
+                textSize = 16f
+                background = android.graphics.drawable.ColorDrawable(0xFF1E3A5F.toInt())
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+                maxLines = 1
+                setPadding(
+                    (14 * resources.displayMetrics.density).toInt(),
+                    (14 * resources.displayMetrics.density).toInt(),
+                    (14 * resources.displayMetrics.density).toInt(),
+                    (14 * resources.displayMetrics.density).toInt()
+                )
+            }
+            
+            // Create close button
+            val closeButton = android.widget.ImageButton(requireContext()).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    (48 * resources.displayMetrics.density).toInt(),
+                    (48 * resources.displayMetrics.density).toInt()
+                ).apply {
+                    gravity = android.view.Gravity.END
+                }
+                setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+                setColorFilter(0xFFFFFFFF.toInt())
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                setOnClickListener {
+                    closeSearchOverlay()
+                }
+            }
+            
+            // Create horizontal layout for search input and close button
+            val searchRow = android.widget.LinearLayout(requireContext()).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            
+            searchRow.addView(searchInput)
+            searchRow.addView(closeButton)
+            searchContainer.addView(searchRow)
+            
+            // Add search container at the top of overlay (before RecyclerView)
+            val recyclerViewIndex = overlayView.indexOfChild(searchResultsRecyclerView)
+            if (recyclerViewIndex >= 0) {
+                overlayView.addView(searchContainer, recyclerViewIndex)
+            } else {
+                overlayView.addView(searchContainer, 0)
+            }
+            
+            // Set up search input
+            dockSearchInput = searchInput
+            setupSearchInputListener()
+            
+            // Focus and show keyboard
+            searchInput.requestFocus()
+            searchInput.post {
+                val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error creating search input overlay: ${e.message}", e)
+        }
+    }
+    
+    private fun setupSearchInputListener() {
+        dockSearchInput?.let { input ->
+            // Set up text change listener
+            input.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    filterAppsForDock(s.toString())
+                }
+                
+                override fun afterTextChanged(s: Editable?) {}
+            })
+        }
+    }
+    
+    private fun closeSearchOverlay() {
+        try {
+            searchResultsOverlay?.visibility = View.GONE
+            dockSearchInput?.clearFocus()
+            // Hide keyboard
+            val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(dockSearchInput?.windowToken, 0)
+            // Clear search input
+            dockSearchInput?.setText("")
+            // Remove search input overlay
+            val overlayView = searchResultsOverlay
+            val searchInput = overlayView?.findViewWithTag<TextInputEditText>("dockSearchInput")
+            searchInput?.parent?.let { parent ->
+                if (parent is ViewGroup) {
+                    overlayView?.removeView(parent)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error closing search overlay: ${e.message}", e)
+        }
+    }
+    
+    private fun loadAllAppsForSearch() {
+        lifecycleScope.launch {
+            try {
+                allApps = AppLoader.loadApps(requireContext(), preferences.hiddenApps)
+            } catch (e: Exception) {
+                android.util.Log.e("HomeScreenFragment", "Error loading apps for search: ${e.message}", e)
+            }
+        }
+    }
+    
+    private fun filterAppsForDock(query: String) {
+        if (query.isEmpty()) {
+            // Clear search results
+            searchResultsRecyclerView?.adapter = null
+        } else {
+            val filtered = allApps.filter {
+                it.label.contains(query, ignoreCase = true) ||
+                it.packageName.contains(query, ignoreCase = true)
+            }
+            
+            searchAdapter = AppIconAdapter(filtered.toMutableList(), preferences, requireContext())
+            searchResultsRecyclerView?.adapter = searchAdapter
         }
     }
     
