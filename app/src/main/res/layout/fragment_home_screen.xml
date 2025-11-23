@@ -12,27 +12,6 @@
         android:clipToPadding="false"
         android:clipChildren="false" />
 
-    <!-- Search Results Overlay -->
-    <FrameLayout
-        android:id="@+id/searchResultsOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="gone"
-        android:background="#E0000000"
-        android:clickable="true"
-        android:focusable="true">
-        
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/searchResultsRecyclerView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:paddingTop="100dp"
-            android:paddingBottom="200dp"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:nestedScrollingEnabled="false" />
-    </FrameLayout>
-
     <!-- Dock at the bottom -->
     <include
         android:id="@+id/dockContainer"
