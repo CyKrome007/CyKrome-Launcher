@@ -88,7 +88,7 @@
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:layout_gravity="center"
-                        android:src="@android:drawable/ic_menu_more"
+                        android:src="@drawable/ic_three_dots_vertical"
                         android:tint="#FFFFFF" />
                 </androidx.cardview.widget.CardView>
 
