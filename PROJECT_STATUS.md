@@ -218,6 +218,11 @@
 - Some gesture navigation bugs may be system-level
 - Per-page wallpapers not supported (per spec)
 
+### Known Issues
+- **Search Overlay Keyboard Dismissal**: When the keyboard is dismissed in the search overlay (by pressing back button), the cursor continues to blink in the search input field. The focus is not properly cleared from the overlay search bar.
+  - **Location**: `HomeScreenFragment.kt` - Search overlay keyboard handling
+  - **Status**: To be fixed later
+
 ### Future Considerations
 - Accessibility features
 - Internationalization (i18n)

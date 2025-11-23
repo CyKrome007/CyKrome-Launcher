@@ -1,12 +1,17 @@
 package com.cykrome.launcher.ui.fragments
 
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
+import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.cykrome.launcher.R
@@ -14,6 +19,7 @@ import com.cykrome.launcher.data.LauncherPreferences
 import com.cykrome.launcher.model.AppInfo
 import com.cykrome.launcher.ui.adapters.AppIconAdapter
 import com.cykrome.launcher.util.AppLoader
+import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.launch
 
 class HomeScreenFragment : Fragment() {
@@ -21,6 +27,15 @@ class HomeScreenFragment : Fragment() {
     private lateinit var homePager: ViewPager2
     private lateinit var preferences: LauncherPreferences
     private var apps: List<AppInfo> = emptyList()
+    private var dockSearchInput: TextInputEditText? = null
+    private var searchResultsOverlay: ViewGroup? = null
+    private var searchResultsRecyclerView: RecyclerView? = null
+    private var allApps: List<AppInfo> = emptyList()
+    private var searchAdapter: AppIconAdapter? = null
+    private var dockContainer: View? = null
+    private var isSearchOverlayVisible = false
+    private var backCallback: OnBackPressedCallback? = null
+    private var pageIndicator: com.google.android.material.tabs.TabLayout? = null
     
     companion object {
         fun newInstance(): HomeScreenFragment {
@@ -55,6 +70,7 @@ class HomeScreenFragment : Fragment() {
             if (isAdded && view != null) {
                 setupHomePager()
                 setupDock(view)
+                setupDockSearch(view)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -117,35 +133,35 @@ class HomeScreenFragment : Fragment() {
             }
             
             // Show page indicator - always show (even for 1 page) above the dock
-            val pageIndicator = view?.findViewById<com.google.android.material.tabs.TabLayout>(R.id.pageIndicator)
+            pageIndicator = view?.findViewById<com.google.android.material.tabs.TabLayout>(R.id.pageIndicator)
             val pageCount = adapter.itemCount
             val homeScreenPageCount = pageCount - 1 // Exclude Cards page (position 0 is Cards, 1+ are home screens)
             
-            if (pageIndicator != null) {
+            pageIndicator?.let { indicator ->
                 // Initially show/hide based on current page (hide on Cards page)
                 val initialPage = homePager.currentItem
-                pageIndicator.visibility = if (initialPage == 0) View.GONE else View.VISIBLE
+                indicator.visibility = if (initialPage == 0) View.GONE else View.VISIBLE
                 
                 // Clear existing tabs and mediator
-                pageIndicator.removeAllTabs()
+                indicator.removeAllTabs()
                 // Remove any existing mediator
                 try {
-                    val mediatorField = pageIndicator.javaClass.getDeclaredField("mediator")
+                    val mediatorField = indicator.javaClass.getDeclaredField("mediator")
                     mediatorField.isAccessible = true
-                    val mediator = mediatorField.get(pageIndicator)
+                    val mediator = mediatorField.get(indicator)
                     mediator?.javaClass?.getDeclaredMethod("detach")?.invoke(mediator)
                 } catch (e: Exception) {
                     // Ignore if no mediator exists
                 }
                 // Add tabs for each home screen page (excluding Cards)
                 for (i in 0 until homeScreenPageCount) {
-                    pageIndicator.addTab(pageIndicator.newTab())
+                    indicator.addTab(indicator.newTab())
                 }
                 
                 // Post to ensure tabs are laid out, then fix their dimensions to maintain circular shape
-                pageIndicator.post {
-                    for (i in 0 until pageIndicator.tabCount) {
-                        val tab = pageIndicator.getTabAt(i)
+                indicator.post {
+                    for (i in 0 until indicator.tabCount) {
+                        val tab = indicator.getTabAt(i)
                         tab?.let {
                             try {
                                 val tabView = it.view
@@ -174,7 +190,7 @@ class HomeScreenFragment : Fragment() {
                 
                 // Set initial tab selection
                 if (initialPage > 0 && initialPage - 1 < homeScreenPageCount) {
-                    pageIndicator.getTabAt(initialPage - 1)?.select()
+                    indicator.getTabAt(initialPage - 1)?.select()
                 }
             }
             
@@ -390,6 +406,326 @@ class HomeScreenFragment : Fragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("HomeScreenFragment", "Error setting up dock: ${e.message}", e)
+        }
+    }
+    
+    private fun setupDockSearch(view: View) {
+        try {
+            // Find search bar and overlay
+            dockContainer = view.findViewById(R.id.dockContainer)
+            // pageIndicator is already set in setupHomePager(), but ensure it's set here too
+            if (pageIndicator == null) {
+                pageIndicator = view.findViewById(R.id.pageIndicator)
+            }
+            val dockSearchBar = dockContainer?.parent?.let { it as? ViewGroup }?.findViewById<View>(R.id.dockSearchBar)
+            searchResultsOverlay = view.findViewById(R.id.searchResultsOverlay)
+            
+            if (dockSearchBar != null && searchResultsOverlay != null) {
+                // Find RecyclerView inside overlay
+                searchResultsRecyclerView = searchResultsOverlay?.findViewById(R.id.searchResultsRecyclerView)
+                
+                // Set up search results RecyclerView
+                searchResultsRecyclerView?.layoutManager = GridLayoutManager(requireContext(), 4)
+                
+                // Load all apps for search
+                loadAllAppsForSearch()
+                
+                // Set up click listener to open search overlay
+                dockSearchBar.setOnClickListener {
+                    openSearchOverlay()
+                }
+                
+                // Close overlay when clicking outside
+                searchResultsOverlay?.setOnClickListener { v ->
+                    if (v.id == R.id.searchResultsOverlay) {
+                        closeSearchOverlay()
+                    }
+                }
+                
+                // Handle back button press
+                backCallback = object : OnBackPressedCallback(false) {
+                    override fun handleOnBackPressed() {
+                        val searchInput = searchResultsOverlay?.findViewWithTag<TextInputEditText>("dockSearchInput")
+                        val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                        
+                        if (searchInput != null && searchInput.hasFocus()) {
+                            // Input has focus - dismiss keyboard, hide cursor, and clear focus
+                            imm.hideSoftInputFromWindow(searchInput.windowToken, 0)
+                            // Hide cursor explicitly first
+                            searchInput.setCursorVisible(false)
+                            // Clear focus - this will trigger onFocusChangeListener which will also hide cursor
+                            searchInput.clearFocus()
+                            // Force focus to overlay container to ensure input loses focus
+                            searchResultsOverlay?.requestFocus()
+                        } else {
+                            // Input doesn't have focus, close overlay
+                            closeSearchOverlay()
+                        }
+                    }
+                }
+                requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback!!)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error setting up dock search: ${e.message}", e)
+        }
+    }
+    
+    private fun openSearchOverlay() {
+        try {
+            // Show search overlay first
+            searchResultsOverlay?.visibility = View.VISIBLE
+            isSearchOverlayVisible = true
+            
+            // Hide dock
+            dockContainer?.visibility = View.GONE
+            
+            // Hide page indicator
+            pageIndicator?.visibility = View.GONE
+            
+            // Enable back callback - this must be done after setting isSearchOverlayVisible
+            backCallback?.isEnabled = true
+            
+            // Create and show search input dialog/overlay
+            val overlayView = searchResultsOverlay
+            if (overlayView != null) {
+                // Check if search input already exists by tag
+                val existingInput = overlayView.findViewWithTag<TextInputEditText>("dockSearchInput")
+                if (existingInput == null) {
+                    // Create search input overlay
+                    createSearchInputOverlay(overlayView)
+                } else {
+                    // Focus existing input and show keyboard
+                    existingInput.requestFocus()
+                    existingInput.post {
+                        val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                        imm.showSoftInput(existingInput, InputMethodManager.SHOW_IMPLICIT)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error opening search overlay: ${e.message}", e)
+        }
+    }
+    
+    private fun createSearchInputOverlay(overlayView: ViewGroup) {
+        try {
+            // Create search input container at the top of overlay
+            val searchContainer = android.widget.LinearLayout(requireContext()).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setPadding(
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (16 * resources.displayMetrics.density).toInt(),
+                    (16 * resources.displayMetrics.density).toInt()
+                )
+                setBackgroundColor(0xFF1E3A5F.toInt())
+            }
+            
+            // Create search input
+            val searchInput = TextInputEditText(requireContext()).apply {
+                tag = "dockSearchInput"
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    height = (56 * resources.displayMetrics.density).toInt()
+                }
+                hint = "Search apps"
+                setTextColor(0xFFCCCCCC.toInt())
+                setHintTextColor(0xFFCCCCCC.toInt())
+                textSize = 16f
+                background = android.graphics.drawable.ColorDrawable(0xFF1E3A5F.toInt())
+                inputType = android.text.InputType.TYPE_CLASS_TEXT
+                imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+                maxLines = 1
+                setPadding(
+                    (14 * resources.displayMetrics.density).toInt(),
+                    (14 * resources.displayMetrics.density).toInt(),
+                    (14 * resources.displayMetrics.density).toInt(),
+                    (14 * resources.displayMetrics.density).toInt()
+                )
+                // Make overlay search bar clickable - this is a separate component from dock search bar
+                isClickable = true
+                isFocusable = true
+                isFocusableInTouchMode = true
+                
+                // Show keyboard when overlay search bar is clicked
+                setOnClickListener {
+                    val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    
+                    // Make sure it's focusable
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    // Show cursor
+                    setCursorVisible(true)
+                    // Request focus
+                    requestFocus()
+                    
+                    // Show keyboard after focus is set
+                    post {
+                        imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                    }
+                }
+                
+                // Also show keyboard when focus is gained and hide cursor when focus is lost
+                setOnFocusChangeListener { _, hasFocus ->
+                    if (hasFocus) {
+                        // Show cursor and keyboard when focused
+                        setCursorVisible(true)
+                        post {
+                            val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                            imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                        }
+                    } else {
+                        // Hide cursor when focus is lost
+                        setCursorVisible(false)
+                    }
+                }
+            }
+            
+            // Create close button
+            val closeButton = android.widget.ImageButton(requireContext()).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    (48 * resources.displayMetrics.density).toInt(),
+                    (48 * resources.displayMetrics.density).toInt()
+                ).apply {
+                    gravity = android.view.Gravity.END
+                }
+                setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+                setColorFilter(0xFFFFFFFF.toInt())
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                setOnClickListener {
+                    closeSearchOverlay()
+                }
+            }
+            
+            // Create horizontal layout for search input and close button
+            val searchRow = android.widget.LinearLayout(requireContext()).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            
+            searchRow.addView(searchInput)
+            searchRow.addView(closeButton)
+            searchContainer.addView(searchRow)
+            
+            // Add search container at the top of overlay (before RecyclerView)
+            val recyclerViewIndex = overlayView.indexOfChild(searchResultsRecyclerView)
+            if (recyclerViewIndex >= 0) {
+                overlayView.addView(searchContainer, recyclerViewIndex)
+            } else {
+                overlayView.addView(searchContainer, 0)
+            }
+            
+            // Set up search input
+            dockSearchInput = searchInput
+            setupSearchInputListener()
+            
+            // Focus and show keyboard
+            searchInput.requestFocus()
+            searchInput.post {
+                val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error creating search input overlay: ${e.message}", e)
+        }
+    }
+    
+    private fun setupSearchInputListener() {
+        dockSearchInput?.let { input ->
+            // Set up text change listener
+            input.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    filterAppsForDock(s.toString())
+                }
+                
+                override fun afterTextChanged(s: Editable?) {}
+            })
+        }
+    }
+    
+    fun closeSearchOverlay() {
+        try {
+            // Hide search overlay first
+            searchResultsOverlay?.visibility = View.GONE
+            isSearchOverlayVisible = false
+            
+            // Disable back callback after hiding overlay
+            backCallback?.isEnabled = false
+            
+            // Show dock
+            dockContainer?.visibility = View.VISIBLE
+            
+            // Show page indicator (if not on Cards page)
+            val currentPage = homePager.currentItem
+            if (currentPage != 0) {
+                pageIndicator?.visibility = View.VISIBLE
+            }
+            
+            dockSearchInput?.clearFocus()
+            // Hide keyboard
+            val imm = requireContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.hideSoftInputFromWindow(dockSearchInput?.windowToken, 0)
+            // Clear search input
+            dockSearchInput?.setText("")
+            // Remove search input overlay
+            val overlayView = searchResultsOverlay
+            val searchInput = overlayView?.findViewWithTag<TextInputEditText>("dockSearchInput")
+            searchInput?.parent?.let { parent ->
+                if (parent is ViewGroup) {
+                    overlayView?.removeView(parent)
+                }
+            }
+            // Clear search results
+            searchResultsRecyclerView?.adapter = null
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error closing search overlay: ${e.message}", e)
+        }
+    }
+    
+    private fun loadAllAppsForSearch() {
+        lifecycleScope.launch {
+            try {
+                allApps = AppLoader.loadApps(requireContext(), preferences.hiddenApps)
+            } catch (e: Exception) {
+                android.util.Log.e("HomeScreenFragment", "Error loading apps for search: ${e.message}", e)
+            }
+        }
+    }
+    
+    private fun filterAppsForDock(query: String) {
+        if (query.isEmpty()) {
+            // Clear search results
+            searchResultsRecyclerView?.adapter = null
+        } else {
+            val filtered = allApps.filter {
+                it.label.contains(query, ignoreCase = true) ||
+                it.packageName.contains(query, ignoreCase = true)
+            }
+            
+            searchAdapter = AppIconAdapter(filtered.toMutableList(), preferences, requireContext())
+            // Set up click listener to close overlay when app is selected
+            searchAdapter?.onAppClick = { app ->
+                // Launch app
+                val intent = requireContext().packageManager.getLaunchIntentForPackage(app.packageName)
+                if (intent != null) {
+                    requireContext().startActivity(intent)
+                }
+                // Close overlay
+                closeSearchOverlay()
+            }
+            searchResultsRecyclerView?.adapter = searchAdapter
         }
     }
     
