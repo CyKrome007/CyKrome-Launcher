@@ -39,6 +39,15 @@ android {
         }
     }
     
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def buildType = variant.buildType.name.capitalize()
+            def isSigned = variant.signingConfig != null ? "signed" : "unsigned"
+            def versionName = variant.versionName
+            outputFileName = "CyKrome-Launcher-${versionName}-${buildType.toLowerCase()}-${isSigned}.apk"
+        }
+    }
+    
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
