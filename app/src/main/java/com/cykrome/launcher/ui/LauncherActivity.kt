@@ -250,13 +250,20 @@ class LauncherActivity : AppCompatActivity() {
             val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
             rootLayout?.setOnApplyWindowInsetsListener { view, insets ->
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    // Check if status bar is visible (notification drawer closed)
-                    val statusBars = insets.getInsets(android.view.WindowInsets.Type.statusBars())
-                    val isNotificationDrawerOpen = statusBars.top == 0
+                    // Only respond to notification drawer if app drawer is not open
+                    val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+                    val isAppDrawerVisible = drawerContainer?.visibility == View.VISIBLE && 
+                                            (drawerContainer.alpha > 0.5f)
                     
-                    animateWallpaperZoom(
-                        if (isNotificationDrawerOpen) normalWallpaperScale else zoomedWallpaperScale
-                    )
+                    if (!isAppDrawerVisible) {
+                        // Check if status bar is visible (notification drawer closed)
+                        val statusBars = insets.getInsets(android.view.WindowInsets.Type.statusBars())
+                        val isNotificationDrawerOpen = statusBars.top == 0
+                        
+                        animateWallpaperZoom(
+                            if (isNotificationDrawerOpen) normalWallpaperScale else zoomedWallpaperScale
+                        )
+                    }
                 }
                 insets
             }
@@ -265,10 +272,17 @@ class LauncherActivity : AppCompatActivity() {
             if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
                 @Suppress("DEPRECATION")
                 rootLayout?.setOnSystemUiVisibilityChangeListener { visibility ->
-                    val isFullscreen = (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
-                    animateWallpaperZoom(
-                        if (isFullscreen) normalWallpaperScale else zoomedWallpaperScale
-                    )
+                    // Only respond to notification drawer if app drawer is not open
+                    val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+                    val isAppDrawerVisible = drawerContainer?.visibility == View.VISIBLE && 
+                                            (drawerContainer.alpha > 0.5f)
+                    
+                    if (!isAppDrawerVisible) {
+                        val isFullscreen = (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
+                        animateWallpaperZoom(
+                            if (isFullscreen) normalWallpaperScale else zoomedWallpaperScale
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
