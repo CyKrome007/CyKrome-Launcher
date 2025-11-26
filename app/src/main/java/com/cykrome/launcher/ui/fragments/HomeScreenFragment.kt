@@ -245,6 +245,16 @@ class HomeScreenFragment : Fragment() {
         }
     }
     
+    fun navigateToHomePage() {
+        // Navigate to first home screen page (page 1, not Cards which is page 0)
+        if (isAdded && view != null) {
+            val adapter = homePager.adapter
+            if (adapter != null && adapter.itemCount > 1) {
+                homePager.setCurrentItem(1, true) // Smooth scroll to page 1
+            }
+        }
+    }
+    
     private fun setupDock(view: View) {
         try {
             // Find the dock containers

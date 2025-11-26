@@ -1435,6 +1435,31 @@ class LauncherActivity : AppCompatActivity() {
         startActivity(intent)
     }
     
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        // Handle home button press - always return to launcher home screen
+        if (intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
+            returnToHomeScreen()
+        }
+    }
+    
+    private fun returnToHomeScreen() {
+        // Close any open overlays
+        val searchContainer = findViewById<View>(R.id.searchContainer)
+        val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+        
+        if (searchContainer?.visibility == View.VISIBLE) {
+            closeSearch()
+        }
+        
+        if (drawerContainer?.visibility == View.VISIBLE) {
+            closeAppDrawer()
+        }
+        
+        // Navigate to first home screen page (page 1, not Cards which is page 0)
+        homeScreenFragment?.navigateToHomePage()
+    }
+    
     override fun onBackPressed() {
         when {
             findViewById<View>(R.id.searchContainer).visibility == View.VISIBLE -> {
