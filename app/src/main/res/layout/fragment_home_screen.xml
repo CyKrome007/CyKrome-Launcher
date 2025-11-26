@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -7,30 +7,35 @@
 
     <androidx.viewpager2.widget.ViewPager2
         android:id="@+id/homePager"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
         android:clipToPadding="false"
-        android:clipChildren="false" />
+        android:clipChildren="false"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <!-- Dock at the bottom -->
     <include
         android:id="@+id/dockContainer"
         layout="@layout/dock_layout"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal" />
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
     <!-- Page Indicator above dock -->
     <com.google.android.material.tabs.TabLayout
         android:id="@+id/pageIndicator"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="100dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
+        android:layout_marginBottom="-8dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
         android:visibility="visible"
         android:background="@drawable/page_indicator_background"
         app:tabBackground="@drawable/tab_indicator"
@@ -40,9 +45,12 @@
         app:tabPaddingEnd="12dp"
         app:tabPaddingTop="0dp"
         app:tabPaddingBottom="0dp"
-        app:tabMinWidth="10dp"
-        app:tabMaxWidth="10dp"
-        app:tabContentStart="0dp" />
+        app:tabMinWidth="8dp"
+        app:tabMaxWidth="8dp"
+        app:tabContentStart="0dp"
+        app:layout_constraintBottom_toTopOf="@id/dockContainer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
 
-</FrameLayout>
+</androidx.constraintlayout.widget.ConstraintLayout>
 
