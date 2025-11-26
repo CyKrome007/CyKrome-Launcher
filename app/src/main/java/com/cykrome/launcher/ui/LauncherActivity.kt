@@ -40,6 +40,13 @@ class LauncherActivity : AppCompatActivity() {
     private var drawerContainer: View? = null
     private var homeScreenContainer: View? = null
     
+    // For wallpaper zoom animation
+    private var currentWallpaperZoom = 1.1f // Default zoom (bit zoomed)
+    private val zoomedWallpaperScale = 1.1f // Zoomed in state
+    private val normalWallpaperScale = 1.0f // Normal state (when notification is open)
+    private var wallpaperDrawableWrapper: ZoomableDrawable? = null
+    private var wallpaperZoomAnimator: android.animation.ValueAnimator? = null
+    
     // Permission launchers
     private val requestStoragePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -214,16 +221,19 @@ class LauncherActivity : AppCompatActivity() {
             val wallpaperDrawable = wallpaperManager.drawable
             
             if (wallpaperDrawable != null) {
-                // Create a center-cropped version of the wallpaper
-                val centerCroppedDrawable = createCenterCroppedDrawable(wallpaperDrawable)
+                // Create a zoomable center-cropped version of the wallpaper
+                wallpaperDrawableWrapper = ZoomableDrawable(wallpaperDrawable, zoomedWallpaperScale)
                 
                 // Set wallpaper as window background
-                window.setBackgroundDrawable(centerCroppedDrawable)
+                window.setBackgroundDrawable(wallpaperDrawableWrapper)
                 
                 // Set wallpaper on root layout
-                findViewById<ViewGroup>(R.id.rootLayout)?.background = centerCroppedDrawable
+                findViewById<ViewGroup>(R.id.rootLayout)?.background = wallpaperDrawableWrapper
                 
-                android.util.Log.d("LauncherActivity", "Wallpaper set successfully with center crop")
+                // Setup notification drawer detection
+                setupNotificationDrawerDetection()
+                
+                android.util.Log.d("LauncherActivity", "Wallpaper set successfully with zoom support")
             } else {
                 android.util.Log.w("LauncherActivity", "Could not get wallpaper drawable")
             }
@@ -235,73 +245,142 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
     
-    private fun createCenterCroppedDrawable(drawable: Drawable): Drawable {
-        return object : Drawable() {
-            override fun draw(canvas: Canvas) {
-                val bounds = bounds
-                val intrinsicWidth = drawable.intrinsicWidth
-                val intrinsicHeight = drawable.intrinsicHeight
-                
-                if (intrinsicWidth > 0 && intrinsicHeight > 0) {
-                    val viewWidth = bounds.width()
-                    val viewHeight = bounds.height()
+    private fun setupNotificationDrawerDetection() {
+        try {
+            val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
+            rootLayout?.setOnApplyWindowInsetsListener { view, insets ->
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    // Check if status bar is visible (notification drawer closed)
+                    val statusBars = insets.getInsets(android.view.WindowInsets.Type.statusBars())
+                    val isNotificationDrawerOpen = statusBars.top == 0
                     
-                    // Calculate scale to fill the view while maintaining aspect ratio (center crop)
-                    val scaleX = viewWidth.toFloat() / intrinsicWidth
-                    val scaleY = viewHeight.toFloat() / intrinsicHeight
-                    val scale = scaleX.coerceAtLeast(scaleY) // Use larger scale to fill
-                    
-                    // Calculate the source rectangle (center crop)
-                    val scaledWidth = (intrinsicWidth * scale).toInt()
-                    val scaledHeight = (intrinsicHeight * scale).toInt()
-                    val srcLeft = (scaledWidth - viewWidth) / 2
-                    val srcTop = (scaledHeight - viewHeight) / 2
-                    
-                    // Save canvas state
-                    canvas.save()
-                    
-                    // Clip to bounds
-                    canvas.clipRect(bounds)
-                    
-                    // Translate to center the cropped portion
-                    canvas.translate(-srcLeft.toFloat(), -srcTop.toFloat())
-                    
-                    // Scale the drawable
-                    canvas.scale(scale, scale)
-                    
-                    // Draw the drawable
-                    drawable.setBounds(0, 0, intrinsicWidth, intrinsicHeight)
-                    drawable.draw(canvas)
-                    
-                    // Restore canvas state
-                    canvas.restore()
-                } else {
-                    // Fallback: draw normally if dimensions are invalid
-                    drawable.setBounds(bounds)
-                    drawable.draw(canvas)
+                    animateWallpaperZoom(
+                        if (isNotificationDrawerOpen) normalWallpaperScale else zoomedWallpaperScale
+                    )
+                }
+                insets
+            }
+            
+            // Also listen to system UI visibility changes for older Android versions
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+                @Suppress("DEPRECATION")
+                rootLayout?.setOnSystemUiVisibilityChangeListener { visibility ->
+                    val isFullscreen = (visibility and View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
+                    animateWallpaperZoom(
+                        if (isFullscreen) normalWallpaperScale else zoomedWallpaperScale
+                    )
                 }
             }
-            
-            override fun setAlpha(alpha: Int) {
-                drawable.alpha = alpha
+        } catch (e: Exception) {
+            android.util.Log.e("LauncherActivity", "Error setting up notification drawer detection: ${e.message}", e)
+        }
+    }
+    
+    private fun animateWallpaperZoom(targetZoom: Float) {
+        // Cancel any existing animation
+        wallpaperZoomAnimator?.cancel()
+        
+        wallpaperDrawableWrapper?.let { drawable ->
+            wallpaperZoomAnimator = android.animation.ValueAnimator.ofFloat(currentWallpaperZoom, targetZoom).apply {
+                duration = 300 // Smooth 300ms animation
+                interpolator = android.view.animation.DecelerateInterpolator()
+                
+                addUpdateListener { animator ->
+                    val zoom = animator.animatedValue as Float
+                    currentWallpaperZoom = zoom
+                    drawable.setZoom(zoom)
+                    // Invalidate to redraw
+                    findViewById<ViewGroup>(R.id.rootLayout)?.invalidate()
+                }
+                
+                start()
             }
+        }
+    }
+    
+    // Inner class for zoomable wallpaper drawable
+    private inner class ZoomableDrawable(
+        private val drawable: Drawable,
+        private var zoom: Float = 1.1f
+    ) : Drawable() {
+        
+        fun setZoom(newZoom: Float) {
+            zoom = newZoom
+            invalidateSelf()
+        }
+        
+        override fun draw(canvas: Canvas) {
+            val bounds = bounds
+            val intrinsicWidth = drawable.intrinsicWidth
+            val intrinsicHeight = drawable.intrinsicHeight
             
-            override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
-                drawable.colorFilter = colorFilter
+            if (intrinsicWidth > 0 && intrinsicHeight > 0) {
+                val viewWidth = bounds.width()
+                val viewHeight = bounds.height()
+                
+                // Calculate scale to fill the view while maintaining aspect ratio (center crop)
+                val scaleX = viewWidth.toFloat() / intrinsicWidth
+                val scaleY = viewHeight.toFloat() / intrinsicHeight
+                val baseScale = scaleX.coerceAtLeast(scaleY) // Use larger scale to fill
+                
+                // Apply zoom to the base scale
+                val scale = baseScale * zoom
+                
+                // Calculate the scaled dimensions
+                val scaledWidth = (intrinsicWidth * scale)
+                val scaledHeight = (intrinsicHeight * scale)
+                
+                // Calculate center position
+                val centerX = viewWidth / 2f
+                val centerY = viewHeight / 2f
+                
+                // Save canvas state
+                canvas.save()
+                
+                // Clip to bounds
+                canvas.clipRect(bounds)
+                
+                // Translate to center
+                canvas.translate(centerX, centerY)
+                
+                // Scale from center
+                canvas.scale(scale, scale)
+                
+                // Translate back so drawable is centered
+                canvas.translate(-intrinsicWidth / 2f, -intrinsicHeight / 2f)
+                
+                // Draw the drawable
+                drawable.setBounds(0, 0, intrinsicWidth, intrinsicHeight)
+                drawable.draw(canvas)
+                
+                // Restore canvas state
+                canvas.restore()
+            } else {
+                // Fallback: draw normally if dimensions are invalid
+                drawable.setBounds(bounds)
+                drawable.draw(canvas)
             }
-            
-            @Suppress("DEPRECATION")
-            override fun getOpacity(): Int {
-                return drawable.opacity
-            }
-            
-            override fun getIntrinsicWidth(): Int {
-                return drawable.intrinsicWidth
-            }
-            
-            override fun getIntrinsicHeight(): Int {
-                return drawable.intrinsicHeight
-            }
+        }
+        
+        override fun setAlpha(alpha: Int) {
+            drawable.alpha = alpha
+        }
+        
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
+            drawable.colorFilter = colorFilter
+        }
+        
+        @Suppress("DEPRECATION")
+        override fun getOpacity(): Int {
+            return drawable.opacity
+        }
+        
+        override fun getIntrinsicWidth(): Int {
+            return drawable.intrinsicWidth
+        }
+        
+        override fun getIntrinsicHeight(): Int {
+            return drawable.intrinsicHeight
         }
     }
     
@@ -1098,6 +1177,9 @@ class LauncherActivity : AppCompatActivity() {
         
         if (shouldOpen) {
             // Complete opening
+            // Zoom out wallpaper smoothly
+            animateWallpaperZoom(normalWallpaperScale)
+            
             drawerContainer?.animate()
                 ?.alpha(1f)
                 ?.translationY(0f)
@@ -1114,6 +1196,9 @@ class LauncherActivity : AppCompatActivity() {
                 ?.start()
         } else {
             // Close drawer
+            // Zoom in wallpaper smoothly
+            animateWallpaperZoom(zoomedWallpaperScale)
+            
             drawerContainer?.animate()
                 ?.alpha(0f)
                 ?.translationY(screenHeight.toFloat())
@@ -1159,6 +1244,9 @@ class LauncherActivity : AppCompatActivity() {
                         .commitNow()
                 }
                 
+                // Zoom out wallpaper smoothly
+                animateWallpaperZoom(normalWallpaperScale)
+                
                 // Hide home screen with animation
                 val homeScreenContainer = findViewById<View>(R.id.homeScreenContainer)
                 homeScreenContainer?.animate()?.apply {
@@ -1199,6 +1287,9 @@ class LauncherActivity : AppCompatActivity() {
         val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
         val homeScreenContainer = findViewById<View>(R.id.homeScreenContainer)
         val screenHeight = resources.displayMetrics.heightPixels
+        
+        // Zoom in wallpaper smoothly
+        animateWallpaperZoom(zoomedWallpaperScale)
         
         drawerContainer.animate()
             .alpha(0f)
