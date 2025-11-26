@@ -47,9 +47,10 @@ class HomeScreenFragment : Fragment() {
             
             // Set up gesture interceptor for swipe up to open app drawer
             homePager.setOnTouchListener { v, event ->
-                // Let the parent handle gestures for app drawer
-                (activity as? com.cykrome.launcher.ui.LauncherActivity)?.onTouchEvent(event)
-                false // Don't consume the event, let ViewPager2 handle it
+                // Forward touch events to parent activity
+                val handled = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.onTouchEvent(event) ?: false
+                // If parent is handling it (e.g., dragging drawer), consume it here too
+                handled
             }
             
             // Home screen is empty by default - no need to load apps

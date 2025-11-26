@@ -39,6 +39,7 @@ class LauncherActivity : AppCompatActivity() {
     private var touchStartY = 0f
     private var drawerContainer: View? = null
     private var homeScreenContainer: View? = null
+    private var drawerVelocityTracker: android.view.VelocityTracker? = null
     
     // For wallpaper zoom animation
     private var currentWallpaperZoom = 1.1f // Default zoom (bit zoomed)
@@ -962,10 +963,12 @@ class LauncherActivity : AppCompatActivity() {
                 // Check for vertical swipe (up or down)
                 if (absDeltaY > absDeltaX && absDeltaY > minSwipeDistance && Math.abs(velocityY) > minSwipeVelocity) {
                     if (deltaY < 0 && velocityY < 0) {
-                        // Swipe up
-                        android.util.Log.d("LauncherActivity", "Swipe up detected")
-                        handleGesture(preferences.swipeUpAction)
-                        return true
+                        // Swipe up - Don't handle if it's for app drawer (let drag mechanism handle it)
+                        if (preferences.swipeUpAction != LauncherPreferences.ACTION_APP_DRAWER) {
+                            android.util.Log.d("LauncherActivity", "Swipe up detected")
+                            handleGesture(preferences.swipeUpAction)
+                            return true
+                        }
                     } else if (deltaY > 0 && velocityY > 0) {
                         // Swipe down
                         android.util.Log.d("LauncherActivity", "Swipe down detected")
@@ -984,24 +987,14 @@ class LauncherActivity : AppCompatActivity() {
         // Set up touch listener on the root layout to catch all gestures
         val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
         rootLayout?.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    // Check if we should start dragging drawer
-                    if (shouldStartDrawerDrag(event)) {
-                        startDrawerDrag(event)
-                        return@setOnTouchListener true
-                    }
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    // Handle drawer dragging in real-time
-                    if (isDraggingDrawer) {
+            // If we're dragging, consume all events immediately
+            if (isDraggingDrawer) {
+                when (event.action) {
+                    MotionEvent.ACTION_MOVE -> {
                         handleDrawerDrag(event)
                         return@setOnTouchListener true
                     }
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (isDraggingDrawer) {
-                        // Calculate velocity for release
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         val velocityTracker = android.view.VelocityTracker.obtain()
                         velocityTracker.addMovement(event)
                         velocityTracker.computeCurrentVelocity(1000)
@@ -1013,7 +1006,17 @@ class LauncherActivity : AppCompatActivity() {
                 }
             }
             
-            // Also pass to gesture detector for other gestures
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    // Check if we should start dragging drawer
+                    if (shouldStartDrawerDrag(event)) {
+                        startDrawerDrag(event)
+                        return@setOnTouchListener true
+                    }
+                }
+            }
+            
+            // Only pass to gesture detector if not dragging
             val handled = gestureDetector?.onTouchEvent(event) ?: false
             if (handled) {
                 android.util.Log.d("LauncherActivity", "Gesture handled by root view")
@@ -1052,6 +1055,34 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
     
+    override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
+        event?.let {
+            // If already dragging, intercept all events
+            if (isDraggingDrawer) {
+                when (it.action) {
+                    MotionEvent.ACTION_MOVE -> {
+                        handleDrawerDrag(it)
+                        return true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        drawerVelocityTracker?.computeCurrentVelocity(1000)
+                        val velocityY = drawerVelocityTracker?.yVelocity ?: 0f
+                        handleDrawerRelease(velocityY)
+                        return true
+                    }
+                }
+            }
+            
+            // Check if we should start dragging on ACTION_DOWN
+            if (it.action == MotionEvent.ACTION_DOWN && shouldStartDrawerDrag(it)) {
+                startDrawerDrag(it)
+                return true
+            }
+        }
+        
+        return super.dispatchTouchEvent(event)
+    }
+    
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         event?.let {
             when (it.action) {
@@ -1071,12 +1102,8 @@ class LauncherActivity : AppCompatActivity() {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (isDraggingDrawer) {
-                        // Calculate velocity for release
-                        val velocityTracker = android.view.VelocityTracker.obtain()
-                        velocityTracker.addMovement(it)
-                        velocityTracker.computeCurrentVelocity(1000)
-                        val velocityY = velocityTracker.yVelocity
-                        velocityTracker.recycle()
+                        drawerVelocityTracker?.computeCurrentVelocity(1000)
+                        val velocityY = drawerVelocityTracker?.yVelocity ?: 0f
                         handleDrawerRelease(velocityY)
                         return true
                     }
@@ -1100,10 +1127,12 @@ class LauncherActivity : AppCompatActivity() {
         val searchContainer = findViewById<View>(R.id.searchContainer)
         
         if (drawerContainer?.visibility == View.VISIBLE && drawerContainer.alpha > 0.5f) {
+            android.util.Log.d("LauncherActivity", "shouldStartDrawerDrag: Drawer already open")
             return false // Drawer is already open
         }
         
         if (searchContainer?.visibility == View.VISIBLE) {
+            android.util.Log.d("LauncherActivity", "shouldStartDrawerDrag: Search is open")
             return false // Search is open
         }
         
@@ -1111,12 +1140,20 @@ class LauncherActivity : AppCompatActivity() {
         val touchY = event.y
         val startDragZone = screenHeight * 0.7f // Start drag in bottom 30% of screen
         
-        return touchY > startDragZone && preferences.swipeUpAction == LauncherPreferences.ACTION_APP_DRAWER
+        val shouldStart = touchY > startDragZone && preferences.swipeUpAction == LauncherPreferences.ACTION_APP_DRAWER
+        android.util.Log.d("LauncherActivity", "shouldStartDrawerDrag: touchY=$touchY, zone=$startDragZone, action=${preferences.swipeUpAction}, result=$shouldStart")
+        return shouldStart
     }
     
     private fun startDrawerDrag(event: MotionEvent) {
+        android.util.Log.d("LauncherActivity", "startDrawerDrag called at y=${event.y}")
         isDraggingDrawer = true
         touchStartY = event.y
+        
+        // Initialize velocity tracker
+        drawerVelocityTracker?.recycle()
+        drawerVelocityTracker = android.view.VelocityTracker.obtain()
+        drawerVelocityTracker?.addMovement(event)
         
         // Ensure drawer fragment exists
         if (appDrawerFragment == null) {
@@ -1141,6 +1178,7 @@ class LauncherActivity : AppCompatActivity() {
             drawerStartY = screenHeight.toFloat()
             it.translationY = drawerStartY
             it.alpha = 0f
+            android.util.Log.d("LauncherActivity", "Drawer initialized at translationY=$drawerStartY")
         }
         
         // Initialize home screen state
@@ -1152,19 +1190,31 @@ class LauncherActivity : AppCompatActivity() {
     }
     
     private fun handleDrawerDrag(event: MotionEvent) {
-        if (!isDraggingDrawer) return
+        if (!isDraggingDrawer) {
+            android.util.Log.d("LauncherActivity", "handleDrawerDrag called but not dragging!")
+            return
+        }
+        
+        // Add movement to velocity tracker
+        drawerVelocityTracker?.addMovement(event)
         
         val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
         val homeScreenContainer = findViewById<View>(R.id.homeScreenContainer)
         val screenHeight = resources.displayMetrics.heightPixels
         
         val deltaY = touchStartY - event.y // Positive when swiping up
-        val newTranslationY = (drawerStartY - deltaY).coerceIn(0f, screenHeight.toFloat())
+        // Multiply by 2.5 to make drawer move 2.5x faster than finger
+        val amplifiedDeltaY = deltaY * 2.5f
+        val newTranslationY = (drawerStartY - amplifiedDeltaY).coerceIn(0f, screenHeight.toFloat())
         
         drawerContainer?.translationY = newTranslationY
         
         // Calculate progress (0 = closed, 1 = open)
         val progress = 1f - (newTranslationY / screenHeight)
+        
+        if (progress > 0.01f) {
+            android.util.Log.d("LauncherActivity", "handleDrawerDrag: y=${event.y}, deltaY=$deltaY, amplified=$amplifiedDeltaY, translationY=$newTranslationY, progress=$progress")
+        }
         
         // Update alpha based on progress
         drawerContainer?.alpha = progress
@@ -1174,10 +1224,23 @@ class LauncherActivity : AppCompatActivity() {
         val scale = 1f - (progress * 0.05f) // Scale down slightly
         homeScreenContainer?.scaleX = scale
         homeScreenContainer?.scaleY = scale
+        
+        // Update wallpaper zoom progressively based on drag progress
+        // Interpolate between zoomed (1.1) and normal (1.0) based on progress
+        val currentZoom = zoomedWallpaperScale - (progress * (zoomedWallpaperScale - normalWallpaperScale))
+        wallpaperDrawableWrapper?.setZoom(currentZoom)
+        currentWallpaperZoom = currentZoom
+        findViewById<ViewGroup>(R.id.rootLayout)?.invalidate()
     }
     
     private fun handleDrawerRelease(velocityY: Float) {
         if (!isDraggingDrawer) return
+        
+        // Compute velocity and recycle tracker
+        drawerVelocityTracker?.computeCurrentVelocity(1000)
+        val computedVelocityY = drawerVelocityTracker?.yVelocity ?: velocityY
+        drawerVelocityTracker?.recycle()
+        drawerVelocityTracker = null
         
         val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
         val homeScreenContainer = findViewById<View>(R.id.homeScreenContainer)
@@ -1187,7 +1250,8 @@ class LauncherActivity : AppCompatActivity() {
         val progress = 1f - (currentTranslationY / screenHeight)
         
         // Determine if we should open or close based on progress and velocity
-        val shouldOpen = progress > 0.3f || (progress > 0.1f && velocityY < -1000f)
+        // Reduced thresholds: 15% drag distance or 8% + fast fling
+        val shouldOpen = progress > 0.15f || (progress > 0.08f && computedVelocityY < -800f)
         
         if (shouldOpen) {
             // Complete opening
@@ -1197,7 +1261,7 @@ class LauncherActivity : AppCompatActivity() {
             drawerContainer?.animate()
                 ?.alpha(1f)
                 ?.translationY(0f)
-                ?.setDuration(200)
+                ?.setDuration(150)
                 ?.setInterpolator(android.view.animation.DecelerateInterpolator())
                 ?.start()
             
@@ -1205,7 +1269,7 @@ class LauncherActivity : AppCompatActivity() {
                 ?.alpha(0f)
                 ?.scaleX(0.95f)
                 ?.scaleY(0.95f)
-                ?.setDuration(200)
+                ?.setDuration(150)
                 ?.setInterpolator(android.view.animation.AccelerateInterpolator())
                 ?.start()
         } else {
@@ -1216,7 +1280,7 @@ class LauncherActivity : AppCompatActivity() {
             drawerContainer?.animate()
                 ?.alpha(0f)
                 ?.translationY(screenHeight.toFloat())
-                ?.setDuration(200)
+                ?.setDuration(150)
                 ?.setInterpolator(android.view.animation.AccelerateInterpolator())
                 ?.withEndAction {
                     drawerContainer?.visibility = View.GONE
@@ -1227,7 +1291,7 @@ class LauncherActivity : AppCompatActivity() {
                 ?.alpha(1f)
                 ?.scaleX(1f)
                 ?.scaleY(1f)
-                ?.setDuration(200)
+                ?.setDuration(150)
                 ?.setInterpolator(android.view.animation.DecelerateInterpolator())
                 ?.start()
         }
@@ -1267,7 +1331,7 @@ class LauncherActivity : AppCompatActivity() {
                     alpha(0f)
                     scaleX(0.95f)
                     scaleY(0.95f)
-                    duration = 300
+                    duration = 150
                     interpolator = android.view.animation.AccelerateInterpolator()
                     start()
                 }
@@ -1284,7 +1348,7 @@ class LauncherActivity : AppCompatActivity() {
                     drawerContainer.animate()
                         .alpha(1f)
                         .translationY(0f)
-                        .setDuration(300)
+                        .setDuration(150)
                         .setInterpolator(android.view.animation.DecelerateInterpolator())
                         .start()
                 }
@@ -1308,7 +1372,7 @@ class LauncherActivity : AppCompatActivity() {
         drawerContainer.animate()
             .alpha(0f)
             .translationY(screenHeight.toFloat())
-            .setDuration(300)
+            .setDuration(150)
             .setInterpolator(android.view.animation.AccelerateInterpolator())
             .withEndAction {
                 drawerContainer.visibility = View.GONE
@@ -1322,7 +1386,7 @@ class LauncherActivity : AppCompatActivity() {
             alpha(1f)
             scaleX(1f)
             scaleY(1f)
-            duration = 300
+            duration = 150
             interpolator = android.view.animation.DecelerateInterpolator()
             start()
         }
