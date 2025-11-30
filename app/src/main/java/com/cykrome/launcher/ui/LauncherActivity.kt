@@ -1057,8 +1057,7 @@ class LauncherActivity : AppCompatActivity() {
     
     override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
         event?.let {
-            // Only intercept if we're already actively dragging
-            // This allows normal touches (clicks, etc.) to work on child views
+            // If already dragging, intercept all events
             if (isDraggingDrawer) {
                 when (it.action) {
                     MotionEvent.ACTION_MOVE -> {
@@ -1073,11 +1072,82 @@ class LauncherActivity : AppCompatActivity() {
                     }
                 }
             }
-            // Don't intercept ACTION_DOWN - let child views handle it first
-            // The touch listeners will handle starting the drag
+            
+            // For ACTION_DOWN in drag zone, intercept to start dragging
+            // Only skip if we're definitely on dock/search bar
+            if (it.action == MotionEvent.ACTION_DOWN && shouldStartDrawerDrag(it)) {
+                // Only block drag if touch is specifically on dock container or search bar
+                if (!isTouchOnDockOrSearch(it)) {
+                    startDrawerDrag(it)
+                    return true
+                }
+                // If it's on dock/search, let it pass through normally
+            }
         }
         
         return super.dispatchTouchEvent(event)
+    }
+    
+    private fun isTouchOnDockOrSearch(event: MotionEvent): Boolean {
+        val rootLayout = findViewById<ViewGroup>(R.id.rootLayout) ?: return false
+        val x = event.x.toInt()
+        val y = event.y.toInt()
+        
+        // Find the view at this touch point
+        val touchedView = findViewAt(rootLayout, x, y)
+        
+        if (touchedView == null) return false
+        
+        // Only check if we're touching dock container or search bar specifically
+        // Walk up the view hierarchy to find these specific IDs
+        var current: View? = touchedView
+        while (current != null) {
+            val viewId = current.id
+            
+            // Check for dock container or search bar specifically
+            if (viewId == R.id.dockContainer || viewId == R.id.dockSearchBar) {
+                return true
+            }
+            
+            // Stop at main containers
+            if (viewId == R.id.rootLayout || 
+                viewId == R.id.homeScreenContainer ||
+                viewId == R.id.appDrawerContainer ||
+                viewId == R.id.searchContainer) {
+                break
+            }
+            
+            current = current.parent as? View
+        }
+        
+        return false
+    }
+    
+    private fun findViewAt(parent: ViewGroup, x: Int, y: Int): View? {
+        for (i in parent.childCount - 1 downTo 0) {
+            val child = parent.getChildAt(i)
+            if (child.visibility != View.VISIBLE || child.alpha < 0.1f) {
+                continue
+            }
+            
+            val location = IntArray(2)
+            child.getLocationOnScreen(location)
+            val rootLocation = IntArray(2)
+            parent.getLocationOnScreen(rootLocation)
+            
+            val childX = location[0] - rootLocation[0]
+            val childY = location[1] - rootLocation[1]
+            
+            if (x >= childX && x < childX + child.width &&
+                y >= childY && y < childY + child.height) {
+                if (child is ViewGroup) {
+                    val found = findViewAt(child, x - childX, y - childY)
+                    if (found != null) return found
+                }
+                return child
+            }
+        }
+        return null
     }
     
     override fun onTouchEvent(event: MotionEvent?): Boolean {
@@ -1120,6 +1190,7 @@ class LauncherActivity : AppCompatActivity() {
         // 2. We're on the home screen (not in drawer or search)
         // 3. Touch is in the lower part of the screen (where swipe up would start)
         // 4. Search is not open
+        // 5. We're NOT on the Cards/Glance page (position 0)
         val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
         val searchContainer = findViewById<View>(R.id.searchContainer)
         
@@ -1131,6 +1202,17 @@ class LauncherActivity : AppCompatActivity() {
         if (searchContainer?.visibility == View.VISIBLE) {
             android.util.Log.d("LauncherActivity", "shouldStartDrawerDrag: Search is open")
             return false // Search is open
+        }
+        
+        // Check if we're on the Cards/Glance page (position 0)
+        // Don't allow drawer drag on Cards page
+        homeScreenFragment?.let { fragment ->
+            val homePager = fragment.view?.findViewById<androidx.viewpager2.widget.ViewPager2>(R.id.homePager)
+            val currentPage = homePager?.currentItem ?: -1
+            if (currentPage == 0) {
+                android.util.Log.d("LauncherActivity", "shouldStartDrawerDrag: On Cards page, blocking drag")
+                return false // On Cards/Glance page, don't allow drawer drag
+            }
         }
         
         val screenHeight = resources.displayMetrics.heightPixels
