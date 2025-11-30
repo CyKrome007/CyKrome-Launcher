@@ -1057,7 +1057,8 @@ class LauncherActivity : AppCompatActivity() {
     
     override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
         event?.let {
-            // If already dragging, intercept all events
+            // Only intercept if we're already actively dragging
+            // This allows normal touches (clicks, etc.) to work on child views
             if (isDraggingDrawer) {
                 when (it.action) {
                     MotionEvent.ACTION_MOVE -> {
@@ -1072,12 +1073,8 @@ class LauncherActivity : AppCompatActivity() {
                     }
                 }
             }
-            
-            // Check if we should start dragging on ACTION_DOWN
-            if (it.action == MotionEvent.ACTION_DOWN && shouldStartDrawerDrag(it)) {
-                startDrawerDrag(it)
-                return true
-            }
+            // Don't intercept ACTION_DOWN - let child views handle it first
+            // The touch listeners will handle starting the drag
         }
         
         return super.dispatchTouchEvent(event)
