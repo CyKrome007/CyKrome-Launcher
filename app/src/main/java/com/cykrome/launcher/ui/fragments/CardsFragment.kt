@@ -1,8 +1,15 @@
 package com.cykrome.launcher.ui.fragments
 
 import android.Manifest
+import android.app.AppOpsManager
+import android.app.usage.UsageStats
+import android.app.usage.UsageStatsManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
@@ -26,7 +33,9 @@ import com.cykrome.launcher.model.AppInfo
 import com.cykrome.launcher.ui.adapters.AppIconAdapter
 import com.cykrome.launcher.util.AppLoader
 import com.google.android.material.textfield.TextInputEditText
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CardsFragment : Fragment() {
     
@@ -55,6 +64,8 @@ class CardsFragment : Fragment() {
         return inflater.inflate(R.layout.fragment_cards, container, false)
     }
     
+    private var lastUsedAppsContainer: LinearLayout? = null
+    
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
@@ -66,7 +77,7 @@ class CardsFragment : Fragment() {
         lastUsedAppsScrollView = view.findViewById(R.id.lastUsedAppsScrollView)
         val menuButton = view.findViewById<View>(R.id.menuButton)
         val settingsButton = view.findViewById<View>(R.id.settingsButton)
-        val lastUsedAppsContainer = view.findViewById<LinearLayout>(R.id.lastUsedAppsContainer)
+        lastUsedAppsContainer = view.findViewById<LinearLayout>(R.id.lastUsedAppsContainer)
         val calendarSwitch = view.findViewById<Switch>(R.id.calendarCardSwitch)
         val weatherSwitch = view.findViewById<Switch>(R.id.weatherCardSwitch)
         val contactCardsSwitch = view.findViewById<Switch>(R.id.contactCardsSwitch)
@@ -118,15 +129,31 @@ class CardsFragment : Fragment() {
         }
         
         dismissButton?.setOnClickListener {
-            // Hide the welcome dialog
-            view.findViewById<View>(R.id.welcomeDialog)?.visibility = View.GONE
+            // Mark welcome dialog as dismissed and show cards for which permissions are granted
+            isWelcomeDialogDismissed = true
+            val welcomeDialog = view.findViewById<View>(R.id.welcomeDialog)
+            val cardsContainer = view.findViewById<LinearLayout>(R.id.cardsContainer)
+            
+            welcomeDialog?.visibility = View.GONE
+            cardsContainer?.visibility = View.VISIBLE
+            loadActualCards(cardsContainer)
         }
         
-        grantPermissionsButton?.setOnClickListener {
+            grantPermissionsButton?.setOnClickListener {
             // Request all permissions
             requestAllCardPermissions()
         }
     }
+    
+    override fun onResume() {
+        super.onResume()
+        // Refresh last used apps when fragment becomes visible
+        lastUsedAppsContainer?.let {
+            loadLastUsedApps(it)
+        }
+    }
+    
+    private var isWelcomeDialogDismissed = false
     
     private fun updateUIBasedOnPermissions(view: View) {
         val hasCalendarPermission = ContextCompat.checkSelfPermission(
@@ -149,8 +176,8 @@ class CardsFragment : Fragment() {
         val welcomeDialog = view.findViewById<View>(R.id.welcomeDialog)
         val cardsContainer = view.findViewById<LinearLayout>(R.id.cardsContainer)
         
-        if (allPermissionsGranted) {
-            // Hide welcome dialog and show actual cards
+        if (allPermissionsGranted || isWelcomeDialogDismissed) {
+            // Hide welcome dialog and show actual cards (only cards for granted permissions)
             welcomeDialog?.visibility = View.GONE
             cardsContainer?.visibility = View.VISIBLE
             loadActualCards(cardsContainer)
@@ -469,11 +496,47 @@ class CardsFragment : Fragment() {
                 // Load all apps
                 val allApps = AppLoader.loadApps(requireContext(), preferences.hiddenApps)
                 
-                // For now, show first 8 apps as "last used" (in a real implementation, you'd use UsageStatsManager)
-                val lastUsedApps = allApps.take(8)
+                // Check if usage stats permission is granted
+                val hasPermission = withContext(Dispatchers.IO) {
+                    isUsageStatsPermissionGranted()
+                }
+                
+                // Get last used apps using UsageStatsManager
+                val lastUsedApps = withContext(Dispatchers.IO) {
+                    getLastUsedApps(allApps)
+                }
                 
                 // Clear container
                 container.removeAllViews()
+                
+                // If permission not granted, show a button to request it
+                if (!hasPermission) {
+                    val density = resources.displayMetrics.density
+                    val requestButton = TextView(requireContext()).apply {
+                        text = "Enable Usage Access to see last used apps"
+                        setTextColor(0xFFFFFFFF.toInt())
+                        textSize = 12f
+                        setPadding(
+                            (16 * density).toInt(),
+                            (12 * density).toInt(),
+                            (16 * density).toInt(),
+                            (12 * density).toInt()
+                        )
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(0xFF3A3A3A.toInt())
+                            cornerRadius = 8 * density
+                        }
+                        gravity = android.view.Gravity.CENTER
+                        setOnClickListener {
+                            requestUsageStatsPermission()
+                        }
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        )
+                    }
+                    container.addView(requestButton)
+                }
                 
                 // Add app icons
                 val density = resources.displayMetrics.density
@@ -531,6 +594,125 @@ class CardsFragment : Fragment() {
             } catch (e: Exception) {
                 android.util.Log.e("CardsFragment", "Error loading last used apps: ${e.message}", e)
             }
+        }
+    }
+    
+    private fun getLastUsedApps(allApps: List<AppInfo>): List<AppInfo> {
+        return try {
+            // Check if usage stats permission is granted using AppOpsManager
+            if (!isUsageStatsPermissionGranted()) {
+                android.util.Log.d("CardsFragment", "Usage stats permission not granted, using alphabetical order")
+                // Optionally show a toast or prompt to request permission
+                return allApps.take(8)
+            }
+            
+            val usageStatsManager = requireContext().getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            if (usageStatsManager == null) {
+                android.util.Log.d("CardsFragment", "UsageStatsManager is null, using alphabetical order")
+                return allApps.take(8)
+            }
+            
+            // Get usage stats for the last 7 days
+            val time = System.currentTimeMillis()
+            val usageStatsList = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                time - (7 * 24 * 60 * 60 * 1000L), // 7 days ago
+                time
+            )
+            
+            if (usageStatsList.isNullOrEmpty()) {
+                // No usage stats available, fallback to alphabetical
+                android.util.Log.d("CardsFragment", "No usage stats available, using alphabetical order")
+                return allApps.take(8)
+            }
+            
+            android.util.Log.d("CardsFragment", "Found ${usageStatsList.size} usage stats entries")
+            
+            // Create a map of package name to last used time
+            val packageToLastUsed = mutableMapOf<String, Long>()
+            usageStatsList.forEach { usageStats ->
+                val packageName = usageStats.packageName
+                val lastUsed = usageStats.lastTimeUsed
+                // Keep the most recent last used time for each package
+                if (lastUsed > (packageToLastUsed[packageName] ?: 0L)) {
+                    packageToLastUsed[packageName] = lastUsed
+                }
+            }
+            
+            android.util.Log.d("CardsFragment", "Mapped ${packageToLastUsed.size} packages with usage data")
+            
+            // Sort apps by last used time (most recent first)
+            val sortedApps = allApps.sortedByDescending { app ->
+                val lastUsed = packageToLastUsed[app.packageName] ?: 0L
+                if (lastUsed > 0) {
+                    android.util.Log.d("CardsFragment", "App ${app.label} (${app.packageName}) last used: $lastUsed")
+                }
+                lastUsed
+            }
+            
+            // Filter out apps with no usage data and take top 8
+            val appsWithUsage = sortedApps.filter { packageToLastUsed[it.packageName] ?: 0L > 0 }
+            
+            if (appsWithUsage.isEmpty()) {
+                android.util.Log.d("CardsFragment", "No apps with usage data, using alphabetical order")
+                return allApps.take(8)
+            }
+            
+            val result = appsWithUsage.take(8)
+            android.util.Log.d("CardsFragment", "Returning ${result.size} last used apps: ${result.map { it.label }}")
+            result
+        } catch (e: Exception) {
+            android.util.Log.e("CardsFragment", "Error getting last used apps: ${e.message}", e)
+            e.printStackTrace()
+            // Fallback to alphabetical order on error
+            allApps.take(8)
+        }
+    }
+    
+    private fun isUsageStatsPermissionGranted(): Boolean {
+        return try {
+            val appOpsManager = requireContext().getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+            val packageName = requireContext().packageName
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOpsManager?.unsafeCheckOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(),
+                    packageName
+                ) ?: AppOpsManager.MODE_ERRORED
+            } else {
+                @Suppress("DEPRECATION")
+                appOpsManager?.checkOpNoThrow(
+                    AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(),
+                    packageName
+                ) ?: AppOpsManager.MODE_ERRORED
+            }
+            
+            val granted = mode == AppOpsManager.MODE_ALLOWED
+            android.util.Log.d("CardsFragment", "Usage stats permission check: $granted (mode: $mode)")
+            granted
+        } catch (e: Exception) {
+            android.util.Log.e("CardsFragment", "Error checking usage stats permission: ${e.message}", e)
+            false
+        }
+    }
+    
+    private fun requestUsageStatsPermission() {
+        try {
+            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            startActivity(intent)
+            Toast.makeText(
+                requireContext(),
+                "Please enable 'Usage access' for CyKrome Launcher to show last used apps",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            android.util.Log.e("CardsFragment", "Error opening usage stats settings: ${e.message}", e)
+            Toast.makeText(
+                requireContext(),
+                "Please enable Usage access in Settings → Apps → Special app access → Usage access",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
     
