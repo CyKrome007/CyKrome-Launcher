@@ -570,23 +570,46 @@ class LauncherActivity : AppCompatActivity() {
     
     override fun onResume() {
         super.onResume()
+        
+        // Safety check: ensure activity is still valid
+        if (isFinishing || (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed)) {
+            android.util.Log.w("LauncherActivity", "Activity is finishing or destroyed, skipping onResume operations")
+            return
+        }
+        
         // Re-check storage permission when activity resumes (e.g., user returns from settings)
-        checkAndRequestStoragePermission()
+        try {
+            checkAndRequestStoragePermission()
+        } catch (e: Exception) {
+            android.util.Log.e("LauncherActivity", "Error checking storage permission in onResume: ${e.message}", e)
+        }
+        
         // Restore window visibility when resumed
         try {
             window.decorView.alpha = 1f
         } catch (e: Exception) {
             android.util.Log.e("LauncherActivity", "Error restoring window visibility: ${e.message}", e)
         }
+        
         // Reload wallpaper in case it changed - use post to ensure view is ready
         findViewById<ViewGroup>(R.id.rootLayout)?.post {
-            loadWallpaper()
+            try {
+                if (!isFinishing && !isDestroyed) {
+                    loadWallpaper()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("LauncherActivity", "Error loading wallpaper in onResume: ${e.message}", e)
+            }
         }
         
         // Check again in case user changed default launcher
-        val isHomeIntent = intent.categories?.contains(Intent.CATEGORY_HOME) == true
-        if (isHomeIntent && !isDefaultLauncher()) {
-            showSetDefaultLauncherDialog()
+        try {
+            val isHomeIntent = intent.categories?.contains(Intent.CATEGORY_HOME) == true
+            if (isHomeIntent && !isDefaultLauncher()) {
+                showSetDefaultLauncherDialog()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LauncherActivity", "Error checking default launcher in onResume: ${e.message}", e)
         }
     }
     
@@ -1699,26 +1722,62 @@ class LauncherActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         // Handle home button press - always return to launcher home screen
-        if (intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
-            returnToHomeScreen()
+        try {
+            if (intent?.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME)) {
+                // Use post to ensure views are ready
+                findViewById<ViewGroup>(R.id.rootLayout)?.post {
+                    returnToHomeScreen()
+                } ?: run {
+                    // Fallback if rootLayout is null
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        returnToHomeScreen()
+                    }, 100)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LauncherActivity", "Error in onNewIntent: ${e.message}", e)
         }
     }
     
     private fun returnToHomeScreen() {
-        // Close any open overlays
-        val searchContainer = findViewById<View>(R.id.searchContainer)
-        val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
-        
-        if (searchContainer?.visibility == View.VISIBLE) {
-            closeSearch()
+        try {
+            // Safety check: ensure activity is still valid
+            if (isFinishing || (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed)) {
+                android.util.Log.w("LauncherActivity", "Activity is finishing or destroyed, skipping returnToHomeScreen")
+                return
+            }
+            
+            // Close any open overlays
+            val searchContainer = findViewById<View>(R.id.searchContainer)
+            val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+            
+            if (searchContainer?.visibility == View.VISIBLE) {
+                closeSearch()
+            }
+            
+            if (drawerContainer?.visibility == View.VISIBLE) {
+                closeAppDrawer()
+            }
+            
+            // Navigate to first home screen page (page 1, not Cards which is page 0)
+            // Use post to ensure fragment is ready
+            homeScreenFragment?.view?.post {
+                try {
+                    homeScreenFragment?.navigateToHomePage()
+                } catch (e: Exception) {
+                    android.util.Log.e("LauncherActivity", "Error navigating to home page: ${e.message}", e)
+                }
+            } ?: run {
+                // If fragment view is null, try directly (might work if fragment is ready)
+                try {
+                    homeScreenFragment?.navigateToHomePage()
+                } catch (e: Exception) {
+                    android.util.Log.e("LauncherActivity", "Error navigating to home page (direct): ${e.message}", e)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("LauncherActivity", "Error in returnToHomeScreen: ${e.message}", e)
         }
-        
-        if (drawerContainer?.visibility == View.VISIBLE) {
-            closeAppDrawer()
-        }
-        
-        // Navigate to first home screen page (page 1, not Cards which is page 0)
-        homeScreenFragment?.navigateToHomePage()
     }
     
     override fun onBackPressed() {
