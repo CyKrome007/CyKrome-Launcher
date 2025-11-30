@@ -33,6 +33,9 @@ class LauncherActivity : AppCompatActivity() {
     private var doubleTapDetector: DoubleTapDetector? = null
     private var blurOverlay: View? = null
     
+    // Flag to prevent multiple initializations
+    private var isLauncherInitialized = false
+    
     // For drag-based drawer opening
     private var isDraggingDrawer = false
     private var drawerStartY = 0f
@@ -78,14 +81,38 @@ class LauncherActivity : AppCompatActivity() {
     private val requestMediaImagesPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
+        // Safety check: ensure activity is still valid
+        if (isFinishing) {
+            android.util.Log.w("LauncherActivity", "Activity is finishing, ignoring media images permission result")
+            return@registerForActivityResult
+        }
+        
         android.util.Log.d("LauncherActivity", "READ_MEDIA_IMAGES permission: $isGranted")
-        // After media images permission, request videos permission
-        requestMediaVideosPermission()
+        // After media images permission, request videos permission with a delay
+        // This prevents crashing when launching permission request while system is still processing the previous one
+        findViewById<ViewGroup>(R.id.rootLayout)?.postDelayed({
+            if (!isFinishing) {
+                requestMediaVideosPermission()
+            }
+        }, 300) ?: run {
+            // Fallback if rootLayout is null
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (!isFinishing) {
+                    requestMediaVideosPermission()
+                }
+            }, 300)
+        }
     }
     
     private val requestMediaVideosPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
+        // Safety check: ensure activity is still valid
+        if (isFinishing) {
+            android.util.Log.w("LauncherActivity", "Activity is finishing, ignoring media videos permission result")
+            return@registerForActivityResult
+        }
+        
         android.util.Log.d("LauncherActivity", "READ_MEDIA_VIDEO permission: $isGranted")
         // After all media permissions, proceed with initialization
         checkAndRequestMediaPermissions()
@@ -154,6 +181,26 @@ class LauncherActivity : AppCompatActivity() {
     }
     
     private fun initializeLauncher() {
+        // Safety check: ensure activity is in valid state
+        if (isFinishing) {
+            android.util.Log.w("LauncherActivity", "Activity is finishing, skipping launcher initialization")
+            return
+        }
+        
+        // Check if destroyed (API 17+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            if (isDestroyed) {
+                android.util.Log.w("LauncherActivity", "Activity is destroyed, skipping launcher initialization")
+                return
+            }
+        }
+        
+        // Prevent multiple initializations
+        if (isLauncherInitialized) {
+            android.util.Log.d("LauncherActivity", "Launcher already initialized, skipping")
+            return
+        }
+        
         try {
             // Check if this launcher is set as default when launched as HOME
             val isHomeIntent = intent.categories?.contains(Intent.CATEGORY_HOME) == true
@@ -165,6 +212,11 @@ class LauncherActivity : AppCompatActivity() {
             
             // Create blur overlay for context menus
             val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
+            if (rootLayout == null) {
+                android.util.Log.e("LauncherActivity", "rootLayout is null, cannot initialize launcher")
+                return
+            }
+            
             blurOverlay = com.cykrome.launcher.util.BlurHelper.createBlurOverlay(this, rootLayout)
             // Ensure blur overlay is hidden and not blocking touches initially
             blurOverlay?.visibility = View.GONE
@@ -174,7 +226,12 @@ class LauncherActivity : AppCompatActivity() {
             preferences = LauncherPreferences(this)
             
             // Ensure home screen container is visible
-            findViewById<ViewGroup>(R.id.homeScreenContainer)?.visibility = View.VISIBLE
+            val homeScreenContainer = findViewById<ViewGroup>(R.id.homeScreenContainer)
+            if (homeScreenContainer == null) {
+                android.util.Log.e("LauncherActivity", "homeScreenContainer is null, cannot initialize launcher")
+                return
+            }
+            homeScreenContainer.visibility = View.VISIBLE
             
             // Load system wallpaper after view is created - use post to ensure view is ready
             findViewById<ViewGroup>(R.id.rootLayout)?.post {
@@ -203,9 +260,13 @@ class LauncherActivity : AppCompatActivity() {
                     android.widget.Toast.LENGTH_LONG
                 ).show()
             }
+            // Mark as initialized
+            isLauncherInitialized = true
+            android.util.Log.d("LauncherActivity", "Launcher initialization completed successfully")
         } catch (e: Exception) {
             e.printStackTrace()
             android.util.Log.e("LauncherActivity", "Error in initializeLauncher: ${e.message}", e)
+            // Don't mark as initialized if there was an error
             try {
                 android.widget.Toast.makeText(this, "Error initializing launcher: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             } catch (e2: Exception) {
@@ -632,6 +693,20 @@ class LauncherActivity : AppCompatActivity() {
      * Shows blocking overlay and automatically opens settings if permission is not granted.
      */
     private fun checkAndRequestStoragePermission() {
+        // Safety check: ensure activity is in valid state
+        if (isFinishing) {
+            android.util.Log.w("LauncherActivity", "Activity is finishing, skipping storage permission check")
+            return
+        }
+        
+        // Check if destroyed (API 17+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            if (isDestroyed) {
+                android.util.Log.w("LauncherActivity", "Activity is destroyed, skipping storage permission check")
+                return
+            }
+        }
+        
         android.util.Log.d("LauncherActivity", "Checking storage permission on startup...")
         
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -675,6 +750,20 @@ class LauncherActivity : AppCompatActivity() {
      * Check and request media permissions (photos and videos) on Android 13+
      */
     private fun checkAndRequestMediaPermissions() {
+        // Safety check: ensure activity is in valid state
+        if (isFinishing) {
+            android.util.Log.w("LauncherActivity", "Activity is finishing, skipping media permission check")
+            return
+        }
+        
+        // Check if destroyed (API 17+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            if (isDestroyed) {
+                android.util.Log.w("LauncherActivity", "Activity is destroyed, skipping media permission check")
+                return
+            }
+        }
+        
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             // Android 13+ uses granular media permissions
             val hasImagesPermission = checkSelfPermission(android.Manifest.permission.READ_MEDIA_IMAGES) == 
@@ -688,7 +777,25 @@ class LauncherActivity : AppCompatActivity() {
             if (!hasImagesPermission) {
                 // Request images permission first
                 android.util.Log.d("LauncherActivity", "Requesting READ_MEDIA_IMAGES permission")
-                requestMediaImagesPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_IMAGES)
+                try {
+                    requestMediaImagesPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_IMAGES)
+                } catch (e: Exception) {
+                    android.util.Log.e("LauncherActivity", "Error launching media images permission request: ${e.message}", e)
+                    // Fallback: proceed with initialization even without permission
+                    hideStoragePermissionBlockingOverlay()
+                    // Use post to ensure views are ready
+                    findViewById<ViewGroup>(R.id.rootLayout)?.post {
+                        if (!isFinishing) {
+                            initializeLauncher()
+                        }
+                    } ?: run {
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            if (!isFinishing) {
+                                initializeLauncher()
+                            }
+                        }, 100)
+                    }
+                }
                 return
             } else if (!hasVideosPermission) {
                 // Request videos permission
@@ -699,21 +806,96 @@ class LauncherActivity : AppCompatActivity() {
                 // All permissions granted, proceed with initialization
                 android.util.Log.d("LauncherActivity", "All permissions granted, proceeding with initialization")
                 hideStoragePermissionBlockingOverlay()
-                initializeLauncher()
+                // Use post to ensure views are ready before initializing
+                findViewById<ViewGroup>(R.id.rootLayout)?.post {
+                    if (!isFinishing) {
+                        initializeLauncher()
+                    }
+                } ?: run {
+                    // Fallback if rootLayout is null
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        if (!isFinishing) {
+                            initializeLauncher()
+                        }
+                    }, 100)
+                }
             }
         } else {
             // Android 12 and below - storage permission covers media access
             android.util.Log.d("LauncherActivity", "Android 12 or below, storage permission covers media access")
             hideStoragePermissionBlockingOverlay()
-            initializeLauncher()
+            // Use post to ensure views are ready before initializing
+            findViewById<ViewGroup>(R.id.rootLayout)?.post {
+                if (!isFinishing) {
+                    initializeLauncher()
+                }
+            } ?: run {
+                // Fallback if rootLayout is null
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    if (!isFinishing) {
+                        initializeLauncher()
+                    }
+                }, 100)
+            }
         }
     }
     
     private fun requestMediaVideosPermission() {
+        // Safety check: ensure activity is in valid state
+        if (isFinishing) {
+            android.util.Log.w("LauncherActivity", "Activity is finishing, skipping video permission request")
+            return
+        }
+        
+        // Check if destroyed (API 17+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            if (isDestroyed) {
+                android.util.Log.w("LauncherActivity", "Activity is destroyed, skipping video permission request")
+                return
+            }
+        }
+        
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(android.Manifest.permission.READ_MEDIA_VIDEO) != 
                     android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestMediaVideosPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_VIDEO)
+                // Use postDelayed to ensure the previous permission dialog is fully dismissed
+                // before launching the next one
+                findViewById<ViewGroup>(R.id.rootLayout)?.postDelayed({
+                    if (!isFinishing && !isDestroyed) {
+                        try {
+                            requestMediaVideosPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_VIDEO)
+                        } catch (e: Exception) {
+                            android.util.Log.e("LauncherActivity", "Error launching media videos permission request: ${e.message}", e)
+                            // Fallback: proceed with initialization even without permission
+                            hideStoragePermissionBlockingOverlay()
+                            // Use post to ensure views are ready
+                            findViewById<ViewGroup>(R.id.rootLayout)?.post {
+                                if (!isFinishing) {
+                                    initializeLauncher()
+                                }
+                            } ?: run {
+                                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                    if (!isFinishing) {
+                                        initializeLauncher()
+                                    }
+                                }, 100)
+                            }
+                        }
+                    }
+                }, 500) ?: run {
+                    // Fallback if rootLayout is null
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        if (!isFinishing && !isDestroyed) {
+                            try {
+                                requestMediaVideosPermissionLauncher.launch(android.Manifest.permission.READ_MEDIA_VIDEO)
+                            } catch (e: Exception) {
+                                android.util.Log.e("LauncherActivity", "Error launching media videos permission request: ${e.message}", e)
+                                hideStoragePermissionBlockingOverlay()
+                                initializeLauncher()
+                            }
+                        }
+                    }, 500)
+                }
             } else {
                 // Already granted, proceed with initialization
                 checkAndRequestMediaPermissions()
