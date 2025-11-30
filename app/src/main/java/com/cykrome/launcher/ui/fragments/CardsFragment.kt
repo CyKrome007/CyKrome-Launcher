@@ -129,8 +129,14 @@ class CardsFragment : Fragment() {
         }
         
         dismissButton?.setOnClickListener {
-            // Hide the welcome dialog
-            view.findViewById<View>(R.id.welcomeDialog)?.visibility = View.GONE
+            // Mark welcome dialog as dismissed and show cards for which permissions are granted
+            isWelcomeDialogDismissed = true
+            val welcomeDialog = view.findViewById<View>(R.id.welcomeDialog)
+            val cardsContainer = view.findViewById<LinearLayout>(R.id.cardsContainer)
+            
+            welcomeDialog?.visibility = View.GONE
+            cardsContainer?.visibility = View.VISIBLE
+            loadActualCards(cardsContainer)
         }
         
             grantPermissionsButton?.setOnClickListener {
@@ -146,6 +152,8 @@ class CardsFragment : Fragment() {
             loadLastUsedApps(it)
         }
     }
+    
+    private var isWelcomeDialogDismissed = false
     
     private fun updateUIBasedOnPermissions(view: View) {
         val hasCalendarPermission = ContextCompat.checkSelfPermission(
@@ -168,8 +176,8 @@ class CardsFragment : Fragment() {
         val welcomeDialog = view.findViewById<View>(R.id.welcomeDialog)
         val cardsContainer = view.findViewById<LinearLayout>(R.id.cardsContainer)
         
-        if (allPermissionsGranted) {
-            // Hide welcome dialog and show actual cards
+        if (allPermissionsGranted || isWelcomeDialogDismissed) {
+            // Hide welcome dialog and show actual cards (only cards for granted permissions)
             welcomeDialog?.visibility = View.GONE
             cardsContainer?.visibility = View.VISIBLE
             loadActualCards(cardsContainer)
