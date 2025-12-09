@@ -10,15 +10,48 @@ class LauncherPreferences(context: Context) {
     
     // Home Screen Settings
     var homeGridColumns: Int
-        get() = prefs.getInt(KEY_HOME_GRID_COLUMNS, 4)
+        get() {
+            return try {
+                prefs.getInt(KEY_HOME_GRID_COLUMNS, 4)
+            } catch (e: ClassCastException) {
+                // Handle case where it's stored as String (from ListPreference)
+                try {
+                    prefs.getString(KEY_HOME_GRID_COLUMNS, "4")?.toIntOrNull() ?: 4
+                } catch (e2: Exception) {
+                    4
+                }
+            }
+        }
         set(value) = prefs.edit().putInt(KEY_HOME_GRID_COLUMNS, value).apply()
     
     var homeGridRows: Int
-        get() = prefs.getInt(KEY_HOME_GRID_ROWS, 5)
+        get() {
+            return try {
+                prefs.getInt(KEY_HOME_GRID_ROWS, 5)
+            } catch (e: ClassCastException) {
+                // Handle case where it's stored as String (from ListPreference)
+                try {
+                    prefs.getString(KEY_HOME_GRID_ROWS, "5")?.toIntOrNull() ?: 5
+                } catch (e2: Exception) {
+                    5
+                }
+            }
+        }
         set(value) = prefs.edit().putInt(KEY_HOME_GRID_ROWS, value).apply()
     
     var iconSize: Int
-        get() = prefs.getInt(KEY_ICON_SIZE, 100)
+        get() {
+            return try {
+                prefs.getInt(KEY_ICON_SIZE, 100)
+            } catch (e: ClassCastException) {
+                // Handle case where it's stored as String (from ListPreference)
+                try {
+                    prefs.getString(KEY_ICON_SIZE, "100")?.toIntOrNull() ?: 100
+                } catch (e2: Exception) {
+                    100
+                }
+            }
+        }
         set(value) = prefs.edit().putInt(KEY_ICON_SIZE, value).apply()
     
     var showIconLabels: Boolean
@@ -31,11 +64,33 @@ class LauncherPreferences(context: Context) {
     
     // App Drawer Settings
     var drawerGridColumns: Int
-        get() = prefs.getInt(KEY_DRAWER_GRID_COLUMNS, 4)
+        get() {
+            return try {
+                prefs.getInt(KEY_DRAWER_GRID_COLUMNS, 4)
+            } catch (e: ClassCastException) {
+                // Handle case where it's stored as String (from ListPreference)
+                try {
+                    prefs.getString(KEY_DRAWER_GRID_COLUMNS, "4")?.toIntOrNull() ?: 4
+                } catch (e2: Exception) {
+                    4
+                }
+            }
+        }
         set(value) = prefs.edit().putInt(KEY_DRAWER_GRID_COLUMNS, value).apply()
     
     var drawerGridRows: Int
-        get() = prefs.getInt(KEY_DRAWER_GRID_ROWS, 6)
+        get() {
+            return try {
+                prefs.getInt(KEY_DRAWER_GRID_ROWS, 6)
+            } catch (e: ClassCastException) {
+                // Handle case where it's stored as String (from ListPreference)
+                try {
+                    prefs.getString(KEY_DRAWER_GRID_ROWS, "6")?.toIntOrNull() ?: 6
+                } catch (e2: Exception) {
+                    6
+                }
+            }
+        }
         set(value) = prefs.edit().putInt(KEY_DRAWER_GRID_ROWS, value).apply()
     
     var drawerStyle: String
@@ -144,8 +199,11 @@ class LauncherPreferences(context: Context) {
         
         // Values
         const val DRAWER_STYLE_VERTICAL = "vertical"
+        const val DRAWER_STYLE_ALPHA_VERTICAL = "alpha_vertical"
         const val DRAWER_STYLE_HORIZONTAL = "horizontal"
+        const val DRAWER_STYLE_ALPHA_HORIZONTAL = "alpha_horizontal"
         const val DRAWER_STYLE_LIST = "list"
+        const val DRAWER_STYLE_ALPHA_LIST = "alpha_list"
         
         const val FOLDER_STYLE_GRID = "grid"
         const val FOLDER_STYLE_LIST = "list"

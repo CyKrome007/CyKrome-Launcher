@@ -2,14 +2,20 @@
 <resources>
     <array name="drawer_styles">
         <item>Vertical</item>
+        <item>Alpha Vertical</item>
         <item>Horizontal</item>
+        <item>Alpha Horizontal</item>
         <item>List</item>
+        <item>Alpha List</item>
     </array>
     
     <array name="drawer_style_values">
         <item>vertical</item>
+        <item>alpha_vertical</item>
         <item>horizontal</item>
+        <item>alpha_horizontal</item>
         <item>list</item>
+        <item>alpha_list</item>
     </array>
     
     <array name="gesture_actions">
