@@ -2,6 +2,7 @@ package com.cykrome.launcher.ui.fragments
 
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
@@ -45,9 +46,54 @@ class HomeScreenFragment : Fragment() {
             preferences = LauncherPreferences(requireContext())
             homePager = view.findViewById(R.id.homePager)
             
-            // Set up gesture interceptor for swipe up to open app drawer
+            // Set up gesture interceptor for swipe up to open app drawer and swipe down for notifications
+            var swipeDownStartY = 0f
+            var swipeDownStartX = 0f
+            var isTrackingSwipeDown = false
+            
             homePager.setOnTouchListener { v, event ->
-                // Forward touch events to parent activity
+                android.util.Log.d("HomeScreenFragment", "ViewPager2 touch: action=${event.action}, x=${event.x}, y=${event.y}")
+                
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        swipeDownStartY = event.y
+                        swipeDownStartX = event.x
+                        isTrackingSwipeDown = true
+                        android.util.Log.d("HomeScreenFragment", "Started tracking swipe down in ViewPager2")
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (isTrackingSwipeDown) {
+                            val deltaY = event.y - swipeDownStartY
+                            val deltaX = Math.abs(event.x - swipeDownStartX)
+                            val absDeltaY = Math.abs(deltaY)
+                            val minSwipeDistance = android.view.ViewConfiguration.get(v.context).scaledTouchSlop * 2
+                            
+                            android.util.Log.d("HomeScreenFragment", "MOVE: deltaY=$deltaY, deltaX=$deltaX, absDeltaY=$absDeltaY, min=$minSwipeDistance")
+                            
+                            // Check if it's a vertical swipe down (not horizontal)
+                            if (deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
+                                android.util.Log.d("HomeScreenFragment", "Swipe down detected in ViewPager2! Calling handleGesture")
+                                isTrackingSwipeDown = false
+                                (activity as? com.cykrome.launcher.ui.LauncherActivity)?.let { launcher ->
+                                    val prefs = com.cykrome.launcher.data.LauncherPreferences(v.context)
+                                    android.util.Log.d("HomeScreenFragment", "Swipe down action: ${prefs.swipeDownAction}")
+                                    launcher.handleGesture(prefs.swipeDownAction)
+                                }
+                                return@setOnTouchListener true
+                            }
+                            
+                            // If horizontal movement is too much, cancel tracking
+                            if (deltaX > absDeltaY) {
+                                isTrackingSwipeDown = false
+                            }
+                        }
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        isTrackingSwipeDown = false
+                    }
+                }
+                
+                // Forward touch events to parent activity for other gestures (swipe up, drawer drag)
                 val handled = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.onTouchEvent(event) ?: false
                 // If parent is handling it (e.g., dragging drawer), consume it here too
                 handled
@@ -706,27 +752,63 @@ class DesktopPageFragment : Fragment() {
             // Set up drag and drop listener for apps from drawer
             setupDragAndDropFromDrawer(recyclerView)
             
-            // Set up gesture interceptor for swipe up to open app drawer
-            // Use a custom touch listener that checks for swipe up gestures
+            // Set up gesture interceptor for swipe up to open app drawer and swipe down for notifications
+            // Use a custom touch listener that checks for swipe gestures
+            var swipeDownStartX = 0f
+            var isTrackingSwipeDown = false
+            
             recyclerView.setOnTouchListener { v, event ->
+                android.util.Log.d("DesktopPageFragment", "RecyclerView touch: action=${event.action}, x=${event.x}, y=${event.y}")
+                
                 when (event.action) {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         swipeStartY = event.y
+                        swipeDownStartX = event.x
+                        isTrackingSwipeDown = true
+                        android.util.Log.d("DesktopPageFragment", "Started tracking swipe in RecyclerView")
                         false
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         val deltaY = event.y - swipeStartY
+                        val deltaX = Math.abs(event.x - swipeDownStartX)
+                        val absDeltaY = Math.abs(deltaY)
+                        val minSwipeDistance = android.view.ViewConfiguration.get(v.context).scaledTouchSlop * 2
+                        
+                        android.util.Log.d("DesktopPageFragment", "MOVE: deltaY=$deltaY, deltaX=$deltaX, absDeltaY=$absDeltaY")
+                        
+                        // Check for swipe down (for notifications)
+                        if (isTrackingSwipeDown && deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
+                            // Check if RecyclerView is at the top (can't scroll up)
+                            if (!recyclerView.canScrollVertically(-1)) {
+                                android.util.Log.d("DesktopPageFragment", "Swipe down detected in RecyclerView! Calling handleGesture")
+                                isTrackingSwipeDown = false
+                                (activity as? com.cykrome.launcher.ui.LauncherActivity)?.let { launcher ->
+                                    val prefs = com.cykrome.launcher.data.LauncherPreferences(v.context)
+                                    android.util.Log.d("DesktopPageFragment", "Swipe down action: ${prefs.swipeDownAction}")
+                                    launcher.handleGesture(prefs.swipeDownAction)
+                                }
+                                return@setOnTouchListener true
+                            }
+                        }
+                        
                         // If swiping up and RecyclerView is at the top, let parent handle it
                         if (deltaY < -50 && !recyclerView.canScrollVertically(-1)) {
                             // RecyclerView is at top and user is swiping up - let parent handle
                             (activity as? com.cykrome.launcher.ui.LauncherActivity)?.onTouchEvent(event)
+                            isTrackingSwipeDown = false
                             true // Consume the event
                         } else {
+                            // If horizontal movement is too much, cancel swipe down tracking
+                            if (deltaX > absDeltaY) {
+                                isTrackingSwipeDown = false
+                            }
                             false // Let RecyclerView handle scrolling
                         }
                     }
                     android.view.MotionEvent.ACTION_UP -> {
                         val deltaY = event.y - swipeStartY
+                        isTrackingSwipeDown = false
+                        
                         // If it was a swipe up and RecyclerView was at top, trigger app drawer
                         if (deltaY < -100 && !recyclerView.canScrollVertically(-1)) {
                             (activity as? com.cykrome.launcher.ui.LauncherActivity)?.openAppDrawer()
@@ -734,6 +816,10 @@ class DesktopPageFragment : Fragment() {
                         } else {
                             false
                         }
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        isTrackingSwipeDown = false
+                        false
                     }
                     else -> false
                 }

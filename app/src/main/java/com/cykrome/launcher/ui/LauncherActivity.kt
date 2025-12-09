@@ -1,5 +1,6 @@
 package com.cykrome.launcher.ui
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
@@ -43,6 +44,10 @@ class LauncherActivity : AppCompatActivity() {
     private var drawerContainer: View? = null
     private var homeScreenContainer: View? = null
     private var drawerVelocityTracker: android.view.VelocityTracker? = null
+    private var swipeDownStartY: Float = 0f
+    private var isSwipeDownDetected: Boolean = false
+    private var swipeDownStartX: Float = 0f
+    private var isTrackingSwipeDown: Boolean = false
     
     // For wallpaper zoom animation
     private var currentWallpaperZoom = 1.1f // Default zoom (bit zoomed)
@@ -1132,7 +1137,12 @@ class LauncherActivity : AppCompatActivity() {
     private fun setupGestures() {
         doubleTapDetector = DoubleTapDetector()
         gestureDetector = GestureDetector(this, object : android.view.GestureDetector.OnGestureListener {
-            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onDown(e: MotionEvent): Boolean {
+                // Reset swipe down detection
+                isSwipeDownDetected = false
+                swipeDownStartY = e.y
+                return true
+            }
             override fun onShowPress(e: MotionEvent) {}
             override fun onSingleTapUp(e: MotionEvent): Boolean = false
             override fun onScroll(e1: MotionEvent?, e2: MotionEvent, distanceX: Float, distanceY: Float): Boolean {
@@ -1141,6 +1151,33 @@ class LauncherActivity : AppCompatActivity() {
                     handleDrawerDrag(e2)
                     return true
                 }
+                
+                // Handle swipe down for notification drawer (when scrolling down)
+                // distanceY is negative when scrolling down (user is moving finger down)
+                if (e1 != null && distanceY < 0 && !isSwipeDownDetected) {
+                    val deltaY = e2.y - e1.y
+                    val deltaX = Math.abs(e2.x - e1.x)
+                    val absDeltaY = Math.abs(deltaY)
+                    val minSwipeDistance = ViewConfiguration.get(this@LauncherActivity).scaledTouchSlop * 2
+                    
+                    // Check if it's a vertical swipe down (not horizontal)
+                    // Allow swipe down from anywhere on screen, but require sufficient vertical movement
+                    if (absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
+                        // Check if we're on home screen (not in drawer or search)
+                        val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+                        val searchContainer = findViewById<View>(R.id.searchContainer)
+                        val isOnHomeScreen = (drawerContainer?.visibility != View.VISIBLE || drawerContainer.alpha < 0.5f) &&
+                                            searchContainer?.visibility != View.VISIBLE
+                        
+                        if (isOnHomeScreen) {
+                            android.util.Log.d("LauncherActivity", "Swipe down detected in onScroll, deltaY: $absDeltaY")
+                            isSwipeDownDetected = true
+                            handleGesture(preferences.swipeDownAction)
+                            return true
+                        }
+                    }
+                }
+                
                 return false
             }
             override fun onLongPress(e: MotionEvent) {}
@@ -1191,7 +1228,19 @@ class LauncherActivity : AppCompatActivity() {
         
         // Set up touch listener on the root layout to catch all gestures
         val rootLayout = findViewById<ViewGroup>(R.id.rootLayout)
+        
+        // Set up swipe down listener on custom FrameLayout
+        (rootLayout as? SwipeDownInterceptingFrameLayout)?.setOnSwipeDownListener {
+            android.util.Log.d("LauncherActivity", "Swipe down detected by custom FrameLayout! Calling handleGesture")
+            handleGesture(preferences.swipeDownAction)
+        }
+        var rootSwipeDownStartY = 0f
+        var rootSwipeDownStartX = 0f
+        var isRootTrackingSwipeDown = false
+        
         rootLayout?.setOnTouchListener { v, event ->
+            android.util.Log.d("LauncherActivity", "RootLayout touch: action=${event.action}, x=${event.x}, y=${event.y}")
+            
             // If we're dragging, consume all events immediately
             if (isDraggingDrawer) {
                 when (event.action) {
@@ -1211,13 +1260,53 @@ class LauncherActivity : AppCompatActivity() {
                 }
             }
             
+            // Handle swipe down detection at root level
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    rootSwipeDownStartY = event.y
+                    rootSwipeDownStartX = event.x
+                    isRootTrackingSwipeDown = !shouldStartDrawerDrag(event)
+                    android.util.Log.d("LauncherActivity", "RootLayout ACTION_DOWN: tracking=$isRootTrackingSwipeDown")
+                    
                     // Check if we should start dragging drawer
                     if (shouldStartDrawerDrag(event)) {
                         startDrawerDrag(event)
                         return@setOnTouchListener true
                     }
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (isRootTrackingSwipeDown && !isDraggingDrawer) {
+                        val deltaY = event.y - rootSwipeDownStartY
+                        val deltaX = Math.abs(event.x - rootSwipeDownStartX)
+                        val absDeltaY = Math.abs(deltaY)
+                        val minSwipeDistance = ViewConfiguration.get(this).scaledTouchSlop * 2
+                        
+                        android.util.Log.d("LauncherActivity", "RootLayout MOVE: deltaY=$deltaY, deltaX=$deltaX, absDeltaY=$absDeltaY")
+                        
+                        // Check if it's a vertical swipe down
+                        if (deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
+                            // Check if we're on home screen
+                            val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+                            val searchContainer = findViewById<View>(R.id.searchContainer)
+                            val isOnHomeScreen = (drawerContainer?.visibility != View.VISIBLE || drawerContainer.alpha < 0.5f) &&
+                                                searchContainer?.visibility != View.VISIBLE
+                            
+                            if (isOnHomeScreen) {
+                                android.util.Log.d("LauncherActivity", "RootLayout: Swipe down detected! Calling handleGesture")
+                                isRootTrackingSwipeDown = false
+                                handleGesture(preferences.swipeDownAction)
+                                return@setOnTouchListener true
+                            }
+                        }
+                        
+                        // If horizontal movement is too much, cancel tracking
+                        if (deltaX > absDeltaY) {
+                            isRootTrackingSwipeDown = false
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    isRootTrackingSwipeDown = false
                 }
             }
             
@@ -1262,6 +1351,8 @@ class LauncherActivity : AppCompatActivity() {
     
     override fun dispatchTouchEvent(event: MotionEvent?): Boolean {
         event?.let {
+            android.util.Log.d("LauncherActivity", "dispatchTouchEvent: action=${it.action}, x=${it.x}, y=${it.y}")
+            
             // If already dragging, intercept all events
             if (isDraggingDrawer) {
                 when (it.action) {
@@ -1278,19 +1369,78 @@ class LauncherActivity : AppCompatActivity() {
                 }
             }
             
-            // For ACTION_DOWN in drag zone, intercept to start dragging
-            // Only skip if we're definitely on dock/search bar
-            if (it.action == MotionEvent.ACTION_DOWN && shouldStartDrawerDrag(it)) {
-                // Only block drag if touch is specifically on dock container or search bar
-                if (!isTouchOnDockOrSearch(it)) {
-                    startDrawerDrag(it)
-                    return true
+            // Handle swipe down gesture detection directly
+            when (it.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    android.util.Log.d("LauncherActivity", "ACTION_DOWN: y=${it.y}, shouldStartDrawerDrag=${shouldStartDrawerDrag(it)}")
+                    // Track swipe down from anywhere on screen (but not if we're starting drawer drag)
+                    if (!shouldStartDrawerDrag(it)) {
+                        swipeDownStartY = it.y
+                        swipeDownStartX = it.x
+                        isTrackingSwipeDown = true
+                        isSwipeDownDetected = false
+                        android.util.Log.d("LauncherActivity", "Started tracking swipe down from y=${it.y}")
+                    } else {
+                        isTrackingSwipeDown = false
+                        android.util.Log.d("LauncherActivity", "Not tracking swipe down - drawer drag zone")
+                    }
+                    
+                    // For ACTION_DOWN in drag zone, intercept to start dragging
+                    // Only skip if we're definitely on dock/search bar
+                    if (shouldStartDrawerDrag(it)) {
+                        // Only block drag if touch is specifically on dock container or search bar
+                        if (!isTouchOnDockOrSearch(it)) {
+                            startDrawerDrag(it)
+                            return true
+                        }
+                        // If it's on dock/search, let it pass through normally
+                    }
                 }
-                // If it's on dock/search, let it pass through normally
+                MotionEvent.ACTION_MOVE -> {
+                    if (isTrackingSwipeDown && !isSwipeDownDetected && !isDraggingDrawer) {
+                        val deltaY = it.y - swipeDownStartY
+                        val deltaX = Math.abs(it.x - swipeDownStartX)
+                        val absDeltaY = Math.abs(deltaY)
+                        val minSwipeDistance = ViewConfiguration.get(this).scaledTouchSlop * 2
+                        
+                        android.util.Log.d("LauncherActivity", "ACTION_MOVE: deltaY=$deltaY, deltaX=$deltaX, absDeltaY=$absDeltaY, min=$minSwipeDistance")
+                        
+                        // Check if it's a vertical swipe down (not horizontal)
+                        if (deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
+                            // Check if we're on home screen (not in drawer or search)
+                            val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+                            val searchContainer = findViewById<View>(R.id.searchContainer)
+                            val isOnHomeScreen = (drawerContainer?.visibility != View.VISIBLE || drawerContainer.alpha < 0.5f) &&
+                                                searchContainer?.visibility != View.VISIBLE
+                            
+                            android.util.Log.d("LauncherActivity", "Swipe down detected! isOnHomeScreen=$isOnHomeScreen")
+                            
+                            if (isOnHomeScreen) {
+                                android.util.Log.d("LauncherActivity", "Swipe down detected in dispatchTouchEvent, deltaY: $absDeltaY")
+                                isSwipeDownDetected = true
+                                isTrackingSwipeDown = false
+                                handleGesture(preferences.swipeDownAction)
+                                return true
+                            }
+                        }
+                        
+                        // If horizontal movement is too much, cancel tracking
+                        if (deltaX > absDeltaY) {
+                            android.util.Log.d("LauncherActivity", "Cancelling swipe down tracking - too much horizontal movement")
+                            isTrackingSwipeDown = false
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    android.util.Log.d("LauncherActivity", "ACTION_UP/CANCEL: isTrackingSwipeDown=$isTrackingSwipeDown")
+                    isTrackingSwipeDown = false
+                }
             }
         }
         
-        return super.dispatchTouchEvent(event)
+        val result = super.dispatchTouchEvent(event)
+        android.util.Log.d("LauncherActivity", "dispatchTouchEvent returning: $result")
+        return result
     }
     
     private fun isTouchOnDockOrSearch(event: MotionEvent): Boolean {
@@ -1583,12 +1733,19 @@ class LauncherActivity : AppCompatActivity() {
         isDraggingDrawer = false
     }
     
-    private fun handleGesture(action: String) {
+    fun handleGesture(action: String) {
+        android.util.Log.d("LauncherActivity", "handleGesture called with action: $action")
         when (action) {
             LauncherPreferences.ACTION_APP_DRAWER -> openAppDrawer()
             LauncherPreferences.ACTION_SEARCH -> openSearch()
-            LauncherPreferences.ACTION_NOTIFICATIONS -> expandNotifications()
-            LauncherPreferences.ACTION_EXPAND_NOTIFICATIONS -> expandNotifications()
+            LauncherPreferences.ACTION_NOTIFICATIONS -> {
+                android.util.Log.d("LauncherActivity", "Handling ACTION_NOTIFICATIONS")
+                expandNotifications()
+            }
+            LauncherPreferences.ACTION_EXPAND_NOTIFICATIONS -> {
+                android.util.Log.d("LauncherActivity", "Handling ACTION_EXPAND_NOTIFICATIONS")
+                expandNotifications()
+            }
         }
     }
     
@@ -1703,14 +1860,68 @@ class LauncherActivity : AppCompatActivity() {
     }
     
     private fun expandNotifications() {
+        android.util.Log.d("LauncherActivity", "expandNotifications() called")
         try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                setClassName("com.android.systemui", "com.android.systemui.statusbar.phone.StatusBar")
+            // Method 1: Try using IStatusBarService via ServiceManager (most reliable)
+            try {
+                val serviceManager = Class.forName("android.os.ServiceManager")
+                val getService = serviceManager.getMethod("getService", String::class.java)
+                val statusBarService = getService.invoke(null, "statusbar")
+                
+                if (statusBarService != null) {
+                    val iStatusBarService = Class.forName("com.android.internal.statusbar.IStatusBarService\$Stub")
+                    val asInterface = iStatusBarService.getMethod("asInterface", android.os.IBinder::class.java)
+                    val statusBar = asInterface.invoke(null, statusBarService)
+                    
+                    val expandMethod = statusBar?.javaClass?.getMethod("expandNotificationsPanel")
+                    expandMethod?.invoke(statusBar)
+                    android.util.Log.d("LauncherActivity", "Notification panel expanded using IStatusBarService")
+                    return
+                }
+            } catch (e: Exception) {
+                android.util.Log.d("LauncherActivity", "IStatusBarService method failed: ${e.message}")
             }
-            startActivity(intent)
+            
+            // Method 2: Use reflection to call StatusBarManager.expandNotificationsPanel
+            try {
+                val service = getSystemService(Context.STATUS_BAR_SERVICE)
+                if (service != null) {
+                    val expandMethod = service.javaClass.getMethod("expandNotificationsPanel")
+                    expandMethod.invoke(service)
+                    android.util.Log.d("LauncherActivity", "Notification panel expanded using StatusBarManager reflection")
+                    return
+                }
+            } catch (e: Exception) {
+                android.util.Log.d("LauncherActivity", "StatusBarManager reflection failed: ${e.message}")
+            }
+            
+            // Method 3: Use broadcast intent to expand notifications
+            try {
+                val expandIntent = Intent("com.android.systemui.statusbar.EXPAND")
+                expandIntent.addFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY)
+                sendBroadcast(expandIntent)
+                android.util.Log.d("LauncherActivity", "Notification panel expansion broadcast sent")
+            } catch (e: Exception) {
+                android.util.Log.d("LauncherActivity", "Broadcast method failed: ${e.message}")
+            }
+            
+            // Method 4: Try using GlobalActionsPerformer (Android 11+)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                try {
+                    val globalActionsClass = Class.forName("com.android.internal.globalactions.GlobalActionsPerformer")
+                    val performer = globalActionsClass.getDeclaredConstructor().newInstance()
+                    val expandMethod = globalActionsClass.getMethod("expandNotificationsPanel")
+                    expandMethod.invoke(performer)
+                    android.util.Log.d("LauncherActivity", "Notification panel expanded using GlobalActionsPerformer")
+                    return
+                } catch (e: Exception) {
+                    android.util.Log.d("LauncherActivity", "GlobalActionsPerformer method failed: ${e.message}")
+                }
+            }
+            
+            android.util.Log.w("LauncherActivity", "All notification expansion methods failed")
         } catch (e: Exception) {
-            // Fallback to notification panel
+            android.util.Log.e("LauncherActivity", "Error expanding notifications: ${e.message}", e)
         }
     }
     
