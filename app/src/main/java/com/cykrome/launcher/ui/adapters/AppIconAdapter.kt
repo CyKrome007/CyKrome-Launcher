@@ -16,7 +16,8 @@ import com.cykrome.launcher.util.BadgeHelper
 class AppIconAdapter(
     var apps: MutableList<AppInfo>,
     private val preferences: LauncherPreferences,
-    private val context: android.content.Context
+    private val context: android.content.Context,
+    private val useListLayout: Boolean = false
 ) : RecyclerView.Adapter<AppIconAdapter.AppIconViewHolder>() {
     
     var onAppClick: ((AppInfo) -> Unit)? = null
@@ -43,8 +44,9 @@ class AppIconAdapter(
     }
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AppIconViewHolder {
+        val layoutRes = if (useListLayout) R.layout.item_app_icon_list else R.layout.item_app_icon
         val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_app_icon, parent, false)
+            .inflate(layoutRes, parent, false)
         return AppIconViewHolder(view)
     }
     
