@@ -6,6 +6,7 @@ import android.util.Log
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import com.cykrome.launcher.R
 
 class SwipeDownInterceptingFrameLayout @JvmOverloads constructor(
     context: Context,
@@ -28,6 +29,19 @@ class SwipeDownInterceptingFrameLayout @JvmOverloads constructor(
         }
         
         val event = ev
+        
+        // Check if drawer is visible - if so, don't intercept at all
+        // This allows RecyclerView to handle scrolling normally
+        val drawerContainer = findViewById<android.view.View>(R.id.appDrawerContainer)
+        val searchContainer = findViewById<android.view.View>(R.id.searchContainer)
+        val isDrawerVisible = drawerContainer?.visibility == android.view.View.VISIBLE && drawerContainer.alpha >= 0.5f
+        val isSearchVisible = searchContainer?.visibility == android.view.View.VISIBLE
+        
+        if (isDrawerVisible || isSearchVisible) {
+            Log.d("SwipeDownIntercept", "Drawer/Search visible - not intercepting, allowing child views to handle")
+            return false // Don't intercept - let child views (RecyclerView) handle events
+        }
+        
         Log.d("SwipeDownIntercept", "onInterceptTouchEvent: action=${event.action}, x=${event.x}, y=${event.y}")
         
         when (event.action) {
