@@ -922,7 +922,6 @@ class AppDrawerPageFragment : Fragment() {
         var isDragging = false
         var wasScrolling = false
         var velocityTracker: android.view.VelocityTracker? = null
-        var hasScrolledToTop = false
         
         recyclerView.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: androidx.recyclerview.widget.RecyclerView, newState: Int) {
@@ -931,126 +930,184 @@ class AppDrawerPageFragment : Fragment() {
             }
         })
         
-        recyclerView.setOnTouchListener { v, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    startY = event.y
-                    isDragging = false
-                    wasScrolling = false
-                    hasScrolledToTop = false
-                    velocityTracker = android.view.VelocityTracker.obtain()
-                    velocityTracker?.addMovement(event)
-                    false
-                }
-                android.view.MotionEvent.ACTION_MOVE -> {
-                    velocityTracker?.addMovement(event)
-                    val deltaY = event.y - startY
-                    
-                    if (isVerticalMode) {
-                        // Vertical mode: Check if we can scroll up
-                        val canScrollUp = recyclerView.canScrollVertically(-1)
+        // Use addOnItemTouchListener instead of setOnTouchListener to avoid interfering with RecyclerView's touch handling
+        recyclerView.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
+                when (e.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        startY = e.y
+                        isDragging = false
+                        wasScrolling = false
+                        velocityTracker = android.view.VelocityTracker.obtain()
+                        velocityTracker?.addMovement(e)
                         
-                        // If not at top and swiping down, scroll to top first
-                        if (canScrollUp && deltaY > 20 && !wasScrolling && !hasScrolledToTop) {
-                            // Scroll to top smoothly
-                            recyclerView.smoothScrollToPosition(0)
-                            hasScrolledToTop = true
-                            return@setOnTouchListener true
+                        if (isVerticalMode) {
+                            // Check if we can scroll up (i.e., not at top)
+                            val canScrollUp = rv.canScrollVertically(-1)
+                            // If NOT at top, don't intercept - let RecyclerView handle scrolling
+                            if (canScrollUp) {
+                                return false
+                            }
                         }
+                        return false
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        velocityTracker?.addMovement(e)
+                        val deltaY = e.y - startY
                         
-                        // If at top and swiping down, handle drawer close
-                        if (!canScrollUp && deltaY > 20 && !wasScrolling) {
-                            if (!isDragging) {
-                                isDragging = true
-                                recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+                        if (isVerticalMode) {
+                            // Vertical mode: Check if we can scroll up (i.e., not at top)
+                            val canScrollUp = rv.canScrollVertically(-1)
+                            
+                            // If NOT at top, don't intercept - let RecyclerView handle scrolling normally
+                            if (canScrollUp) {
+                                return false
+                            }
+                            
+                            // If at top and swiping down, intercept to handle drawer close
+                            if (!canScrollUp && deltaY > 20 && !wasScrolling) {
+                                if (!isDragging) {
+                                    isDragging = true
+                                    rv.parent?.requestDisallowInterceptTouchEvent(true)
+                                    
+                                    val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                                    if (drawerContainer != null) {
+                                        drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    }
+                                }
                                 
                                 val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                                 if (drawerContainer != null) {
-                                    drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    val screenHeight = resources.displayMetrics.heightPixels
+                                    val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                    drawerContainer.translationY = translation
+                                    drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
                                 }
+                                return true
                             }
-                            
-                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                            if (drawerContainer != null) {
-                                val screenHeight = resources.displayMetrics.heightPixels
-                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
-                                drawerContainer.translationY = translation
-                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
-                            }
-                            true
+                            return false
                         } else {
-                            false
-                        }
-                    } else {
-                        // Horizontal mode: Always close drawer on swipe down
-                        if (deltaY > 20 && !wasScrolling) {
-                            if (!isDragging) {
-                                isDragging = true
-                                recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+                            // Horizontal mode: Always intercept swipe down to close drawer
+                            if (deltaY > 20 && !wasScrolling) {
+                                if (!isDragging) {
+                                    isDragging = true
+                                    rv.parent?.requestDisallowInterceptTouchEvent(true)
+                                    
+                                    val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                                    if (drawerContainer != null) {
+                                        drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    }
+                                }
                                 
                                 val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                                 if (drawerContainer != null) {
-                                    drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    val screenHeight = resources.displayMetrics.heightPixels
+                                    val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                    drawerContainer.translationY = translation
+                                    drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
                                 }
+                                return true
                             }
-                            
-                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                            if (drawerContainer != null) {
-                                val screenHeight = resources.displayMetrics.heightPixels
-                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
-                                drawerContainer.translationY = translation
-                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
-                            }
-                            true
-                        } else {
-                            false
+                            return false
                         }
                     }
-                }
-                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                    if (isDragging) {
-                        val deltaY = event.y - startY
-                        val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                        
-                        if (drawerContainer != null) {
-                            val screenHeight = resources.displayMetrics.heightPixels
-                            val currentTranslation = drawerContainer.translationY
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        if (isDragging) {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                             
-                            velocityTracker?.computeCurrentVelocity(1000)
-                            val velocityY = velocityTracker?.yVelocity ?: 0f
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val currentTranslation = drawerContainer.translationY
+                                
+                                velocityTracker?.computeCurrentVelocity(1000)
+                                val velocityY = velocityTracker?.yVelocity ?: 0f
+                                velocityTracker?.recycle()
+                                velocityTracker = null
+                                
+                                val minThreshold = 80 * resources.displayMetrics.density
+                                val maxThreshold = screenHeight * 0.15f
+                                val threshold = minThreshold.coerceAtMost(maxThreshold)
+                                val velocityThreshold = 500f
+                                
+                                if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
+                                    (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
+                                } else {
+                                    drawerContainer.animate()
+                                        .translationY(0f)
+                                        .alpha(1f)
+                                        .setDuration(300)
+                                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                                        .start()
+                                }
+                            }
+                            
+                            rv.parent?.requestDisallowInterceptTouchEvent(false)
+                            drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
+                            isDragging = false
+                            return true
+                        } else {
                             velocityTracker?.recycle()
                             velocityTracker = null
-                            
-                            val minThreshold = 80 * resources.displayMetrics.density
-                            val maxThreshold = screenHeight * 0.15f
-                            val threshold = minThreshold.coerceAtMost(maxThreshold)
-                            val velocityThreshold = 500f
-                            
-                            if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
-                                (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
-                            } else {
-                                drawerContainer.animate()
-                                    .translationY(0f)
-                                    .alpha(1f)
-                                    .setDuration(300)
-                                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                                    .start()
-                            }
+                            return false
                         }
-                        
-                        recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
-                        drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
-                        isDragging = false
-                        true
-                    } else {
-                        velocityTracker?.recycle()
-                        velocityTracker = null
-                        false
                     }
                 }
-                else -> false
+                return false
             }
-        }
+            
+            override fun onTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent) {
+                // Handle touch events when we're dragging
+                if (isDragging) {
+                    when (e.action) {
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                drawerContainer.translationY = translation
+                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
+                            }
+                        }
+                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                            
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val currentTranslation = drawerContainer.translationY
+                                
+                                velocityTracker?.computeCurrentVelocity(1000)
+                                val velocityY = velocityTracker?.yVelocity ?: 0f
+                                velocityTracker?.recycle()
+                                velocityTracker = null
+                                
+                                val minThreshold = 80 * resources.displayMetrics.density
+                                val maxThreshold = screenHeight * 0.15f
+                                val threshold = minThreshold.coerceAtMost(maxThreshold)
+                                val velocityThreshold = 500f
+                                
+                                if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
+                                    (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
+                                } else {
+                                    drawerContainer.animate()
+                                        .translationY(0f)
+                                        .alpha(1f)
+                                        .setDuration(300)
+                                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                                        .start()
+                                }
+                            }
+                            
+                            rv.parent?.requestDisallowInterceptTouchEvent(false)
+                            drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
+                            isDragging = false
+                        }
+                    }
+                }
+            }
+        })
     }
     
     private fun startDragFromDrawer(app: AppInfo, recyclerView: androidx.recyclerview.widget.RecyclerView) {
@@ -1124,7 +1181,6 @@ class AlphaVerticalDrawerPageFragment : Fragment() {
         var isDragging = false
         var wasScrolling = false
         var velocityTracker: android.view.VelocityTracker? = null
-        var hasScrolledToTop = false
         
         recyclerView.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: androidx.recyclerview.widget.RecyclerView, newState: Int) {
@@ -1133,126 +1189,184 @@ class AlphaVerticalDrawerPageFragment : Fragment() {
             }
         })
         
-        recyclerView.setOnTouchListener { v, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    startY = event.y
-                    isDragging = false
-                    wasScrolling = false
-                    hasScrolledToTop = false
-                    velocityTracker = android.view.VelocityTracker.obtain()
-                    velocityTracker?.addMovement(event)
-                    false
-                }
-                android.view.MotionEvent.ACTION_MOVE -> {
-                    velocityTracker?.addMovement(event)
-                    val deltaY = event.y - startY
-                    
-                    if (isVerticalMode) {
-                        // Vertical mode: Check if we can scroll up
-                        val canScrollUp = recyclerView.canScrollVertically(-1)
+        // Use addOnItemTouchListener instead of setOnTouchListener to avoid interfering with RecyclerView's touch handling
+        recyclerView.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
+                when (e.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        startY = e.y
+                        isDragging = false
+                        wasScrolling = false
+                        velocityTracker = android.view.VelocityTracker.obtain()
+                        velocityTracker?.addMovement(e)
                         
-                        // If not at top and swiping down, scroll to top first
-                        if (canScrollUp && deltaY > 20 && !wasScrolling && !hasScrolledToTop) {
-                            // Scroll to top smoothly
-                            recyclerView.smoothScrollToPosition(0)
-                            hasScrolledToTop = true
-                            return@setOnTouchListener true
+                        if (isVerticalMode) {
+                            // Check if we can scroll up (i.e., not at top)
+                            val canScrollUp = rv.canScrollVertically(-1)
+                            // If NOT at top, don't intercept - let RecyclerView handle scrolling
+                            if (canScrollUp) {
+                                return false
+                            }
                         }
+                        return false
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        velocityTracker?.addMovement(e)
+                        val deltaY = e.y - startY
                         
-                        // If at top and swiping down, handle drawer close
-                        if (!canScrollUp && deltaY > 20 && !wasScrolling) {
-                            if (!isDragging) {
-                                isDragging = true
-                                recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+                        if (isVerticalMode) {
+                            // Vertical mode: Check if we can scroll up (i.e., not at top)
+                            val canScrollUp = rv.canScrollVertically(-1)
+                            
+                            // If NOT at top, don't intercept - let RecyclerView handle scrolling normally
+                            if (canScrollUp) {
+                                return false
+                            }
+                            
+                            // If at top and swiping down, intercept to handle drawer close
+                            if (!canScrollUp && deltaY > 20 && !wasScrolling) {
+                                if (!isDragging) {
+                                    isDragging = true
+                                    rv.parent?.requestDisallowInterceptTouchEvent(true)
+                                    
+                                    val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                                    if (drawerContainer != null) {
+                                        drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    }
+                                }
                                 
                                 val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                                 if (drawerContainer != null) {
-                                    drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    val screenHeight = resources.displayMetrics.heightPixels
+                                    val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                    drawerContainer.translationY = translation
+                                    drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
                                 }
+                                return true
                             }
-                            
-                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                            if (drawerContainer != null) {
-                                val screenHeight = resources.displayMetrics.heightPixels
-                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
-                                drawerContainer.translationY = translation
-                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
-                            }
-                            true
+                            return false
                         } else {
-                            false
-                        }
-                    } else {
-                        // Horizontal mode: Always close drawer on swipe down
-                        if (deltaY > 20 && !wasScrolling) {
-                            if (!isDragging) {
-                                isDragging = true
-                                recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+                            // Horizontal mode: Always intercept swipe down to close drawer
+                            if (deltaY > 20 && !wasScrolling) {
+                                if (!isDragging) {
+                                    isDragging = true
+                                    rv.parent?.requestDisallowInterceptTouchEvent(true)
+                                    
+                                    val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                                    if (drawerContainer != null) {
+                                        drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    }
+                                }
                                 
                                 val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                                 if (drawerContainer != null) {
-                                    drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    val screenHeight = resources.displayMetrics.heightPixels
+                                    val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                    drawerContainer.translationY = translation
+                                    drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
                                 }
+                                return true
                             }
-                            
-                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                            if (drawerContainer != null) {
-                                val screenHeight = resources.displayMetrics.heightPixels
-                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
-                                drawerContainer.translationY = translation
-                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
-                            }
-                            true
-                        } else {
-                            false
+                            return false
                         }
                     }
-                }
-                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                    if (isDragging) {
-                        val deltaY = event.y - startY
-                        val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                        
-                        if (drawerContainer != null) {
-                            val screenHeight = resources.displayMetrics.heightPixels
-                            val currentTranslation = drawerContainer.translationY
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        if (isDragging) {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                             
-                            velocityTracker?.computeCurrentVelocity(1000)
-                            val velocityY = velocityTracker?.yVelocity ?: 0f
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val currentTranslation = drawerContainer.translationY
+                                
+                                velocityTracker?.computeCurrentVelocity(1000)
+                                val velocityY = velocityTracker?.yVelocity ?: 0f
+                                velocityTracker?.recycle()
+                                velocityTracker = null
+                                
+                                val minThreshold = 80 * resources.displayMetrics.density
+                                val maxThreshold = screenHeight * 0.15f
+                                val threshold = minThreshold.coerceAtMost(maxThreshold)
+                                val velocityThreshold = 500f
+                                
+                                if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
+                                    (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
+                                } else {
+                                    drawerContainer.animate()
+                                        .translationY(0f)
+                                        .alpha(1f)
+                                        .setDuration(300)
+                                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                                        .start()
+                                }
+                            }
+                            
+                            rv.parent?.requestDisallowInterceptTouchEvent(false)
+                            drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
+                            isDragging = false
+                            return true
+                        } else {
                             velocityTracker?.recycle()
                             velocityTracker = null
-                            
-                            val minThreshold = 80 * resources.displayMetrics.density
-                            val maxThreshold = screenHeight * 0.15f
-                            val threshold = minThreshold.coerceAtMost(maxThreshold)
-                            val velocityThreshold = 500f
-                            
-                            if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
-                                (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
-                            } else {
-                                drawerContainer.animate()
-                                    .translationY(0f)
-                                    .alpha(1f)
-                                    .setDuration(300)
-                                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                                    .start()
-                            }
+                            return false
                         }
-                        
-                        recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
-                        drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
-                        isDragging = false
-                        true
-                    } else {
-                        velocityTracker?.recycle()
-                        velocityTracker = null
-                        false
                     }
                 }
-                else -> false
+                return false
             }
-        }
+            
+            override fun onTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent) {
+                // Handle touch events when we're dragging
+                if (isDragging) {
+                    when (e.action) {
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                drawerContainer.translationY = translation
+                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
+                            }
+                        }
+                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                            
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val currentTranslation = drawerContainer.translationY
+                                
+                                velocityTracker?.computeCurrentVelocity(1000)
+                                val velocityY = velocityTracker?.yVelocity ?: 0f
+                                velocityTracker?.recycle()
+                                velocityTracker = null
+                                
+                                val minThreshold = 80 * resources.displayMetrics.density
+                                val maxThreshold = screenHeight * 0.15f
+                                val threshold = minThreshold.coerceAtMost(maxThreshold)
+                                val velocityThreshold = 500f
+                                
+                                if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
+                                    (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
+                                } else {
+                                    drawerContainer.animate()
+                                        .translationY(0f)
+                                        .alpha(1f)
+                                        .setDuration(300)
+                                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                                        .start()
+                                }
+                            }
+                            
+                            rv.parent?.requestDisallowInterceptTouchEvent(false)
+                            drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
+                            isDragging = false
+                        }
+                    }
+                }
+            }
+        })
     }
     
     private fun startDragFromDrawer(app: AppInfo, recyclerView: androidx.recyclerview.widget.RecyclerView) {
@@ -1408,7 +1522,6 @@ class AlphaListDrawerPageFragment : Fragment() {
         var isDragging = false
         var wasScrolling = false
         var velocityTracker: android.view.VelocityTracker? = null
-        var hasScrolledToTop = false
         
         recyclerView.addOnScrollListener(object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: androidx.recyclerview.widget.RecyclerView, newState: Int) {
@@ -1417,126 +1530,184 @@ class AlphaListDrawerPageFragment : Fragment() {
             }
         })
         
-        recyclerView.setOnTouchListener { v, event ->
-            when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> {
-                    startY = event.y
-                    isDragging = false
-                    wasScrolling = false
-                    hasScrolledToTop = false
-                    velocityTracker = android.view.VelocityTracker.obtain()
-                    velocityTracker?.addMovement(event)
-                    false
-                }
-                android.view.MotionEvent.ACTION_MOVE -> {
-                    velocityTracker?.addMovement(event)
-                    val deltaY = event.y - startY
-                    
-                    if (isVerticalMode) {
-                        // Vertical mode: Check if we can scroll up
-                        val canScrollUp = recyclerView.canScrollVertically(-1)
+        // Use addOnItemTouchListener instead of setOnTouchListener to avoid interfering with RecyclerView's touch handling
+        recyclerView.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
+                when (e.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        startY = e.y
+                        isDragging = false
+                        wasScrolling = false
+                        velocityTracker = android.view.VelocityTracker.obtain()
+                        velocityTracker?.addMovement(e)
                         
-                        // If not at top and swiping down, scroll to top first
-                        if (canScrollUp && deltaY > 20 && !wasScrolling && !hasScrolledToTop) {
-                            // Scroll to top smoothly
-                            recyclerView.smoothScrollToPosition(0)
-                            hasScrolledToTop = true
-                            return@setOnTouchListener true
+                        if (isVerticalMode) {
+                            // Check if we can scroll up (i.e., not at top)
+                            val canScrollUp = rv.canScrollVertically(-1)
+                            // If NOT at top, don't intercept - let RecyclerView handle scrolling
+                            if (canScrollUp) {
+                                return false
+                            }
                         }
+                        return false
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        velocityTracker?.addMovement(e)
+                        val deltaY = e.y - startY
                         
-                        // If at top and swiping down, handle drawer close
-                        if (!canScrollUp && deltaY > 20 && !wasScrolling) {
-                            if (!isDragging) {
-                                isDragging = true
-                                recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+                        if (isVerticalMode) {
+                            // Vertical mode: Check if we can scroll up (i.e., not at top)
+                            val canScrollUp = rv.canScrollVertically(-1)
+                            
+                            // If NOT at top, don't intercept - let RecyclerView handle scrolling normally
+                            if (canScrollUp) {
+                                return false
+                            }
+                            
+                            // If at top and swiping down, intercept to handle drawer close
+                            if (!canScrollUp && deltaY > 20 && !wasScrolling) {
+                                if (!isDragging) {
+                                    isDragging = true
+                                    rv.parent?.requestDisallowInterceptTouchEvent(true)
+                                    
+                                    val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                                    if (drawerContainer != null) {
+                                        drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    }
+                                }
                                 
                                 val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                                 if (drawerContainer != null) {
-                                    drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    val screenHeight = resources.displayMetrics.heightPixels
+                                    val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                    drawerContainer.translationY = translation
+                                    drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
                                 }
+                                return true
                             }
-                            
-                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                            if (drawerContainer != null) {
-                                val screenHeight = resources.displayMetrics.heightPixels
-                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
-                                drawerContainer.translationY = translation
-                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
-                            }
-                            true
+                            return false
                         } else {
-                            false
-                        }
-                    } else {
-                        // Horizontal mode: Always close drawer on swipe down
-                        if (deltaY > 20 && !wasScrolling) {
-                            if (!isDragging) {
-                                isDragging = true
-                                recyclerView.parent?.requestDisallowInterceptTouchEvent(true)
+                            // Horizontal mode: Always intercept swipe down to close drawer
+                            if (deltaY > 20 && !wasScrolling) {
+                                if (!isDragging) {
+                                    isDragging = true
+                                    rv.parent?.requestDisallowInterceptTouchEvent(true)
+                                    
+                                    val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                                    if (drawerContainer != null) {
+                                        drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    }
+                                }
                                 
                                 val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                                 if (drawerContainer != null) {
-                                    drawerContainer.parent?.requestDisallowInterceptTouchEvent(true)
+                                    val screenHeight = resources.displayMetrics.heightPixels
+                                    val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                    drawerContainer.translationY = translation
+                                    drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
                                 }
+                                return true
                             }
-                            
-                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                            if (drawerContainer != null) {
-                                val screenHeight = resources.displayMetrics.heightPixels
-                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
-                                drawerContainer.translationY = translation
-                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
-                            }
-                            true
-                        } else {
-                            false
+                            return false
                         }
                     }
-                }
-                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                    if (isDragging) {
-                        val deltaY = event.y - startY
-                        val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
-                        
-                        if (drawerContainer != null) {
-                            val screenHeight = resources.displayMetrics.heightPixels
-                            val currentTranslation = drawerContainer.translationY
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        if (isDragging) {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
                             
-                            velocityTracker?.computeCurrentVelocity(1000)
-                            val velocityY = velocityTracker?.yVelocity ?: 0f
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val currentTranslation = drawerContainer.translationY
+                                
+                                velocityTracker?.computeCurrentVelocity(1000)
+                                val velocityY = velocityTracker?.yVelocity ?: 0f
+                                velocityTracker?.recycle()
+                                velocityTracker = null
+                                
+                                val minThreshold = 80 * resources.displayMetrics.density
+                                val maxThreshold = screenHeight * 0.15f
+                                val threshold = minThreshold.coerceAtMost(maxThreshold)
+                                val velocityThreshold = 500f
+                                
+                                if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
+                                    (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
+                                } else {
+                                    drawerContainer.animate()
+                                        .translationY(0f)
+                                        .alpha(1f)
+                                        .setDuration(300)
+                                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                                        .start()
+                                }
+                            }
+                            
+                            rv.parent?.requestDisallowInterceptTouchEvent(false)
+                            drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
+                            isDragging = false
+                            return true
+                        } else {
                             velocityTracker?.recycle()
                             velocityTracker = null
-                            
-                            val minThreshold = 80 * resources.displayMetrics.density
-                            val maxThreshold = screenHeight * 0.15f
-                            val threshold = minThreshold.coerceAtMost(maxThreshold)
-                            val velocityThreshold = 500f
-                            
-                            if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
-                                (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
-                            } else {
-                                drawerContainer.animate()
-                                    .translationY(0f)
-                                    .alpha(1f)
-                                    .setDuration(300)
-                                    .setInterpolator(android.view.animation.DecelerateInterpolator())
-                                    .start()
-                            }
+                            return false
                         }
-                        
-                        recyclerView.parent?.requestDisallowInterceptTouchEvent(false)
-                        drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
-                        isDragging = false
-                        true
-                    } else {
-                        velocityTracker?.recycle()
-                        velocityTracker = null
-                        false
                     }
                 }
-                else -> false
+                return false
             }
-        }
+            
+            override fun onTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent) {
+                // Handle touch events when we're dragging
+                if (isDragging) {
+                    when (e.action) {
+                        android.view.MotionEvent.ACTION_MOVE -> {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val translation = (deltaY * 0.9f).coerceAtLeast(0f).coerceAtMost(screenHeight.toFloat())
+                                drawerContainer.translationY = translation
+                                drawerContainer.alpha = 1f - (translation / screenHeight).coerceIn(0f, 0.5f)
+                            }
+                        }
+                        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                            val deltaY = e.y - startY
+                            val drawerContainer = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.findViewById<View>(R.id.appDrawerContainer)
+                            
+                            if (drawerContainer != null) {
+                                val screenHeight = resources.displayMetrics.heightPixels
+                                val currentTranslation = drawerContainer.translationY
+                                
+                                velocityTracker?.computeCurrentVelocity(1000)
+                                val velocityY = velocityTracker?.yVelocity ?: 0f
+                                velocityTracker?.recycle()
+                                velocityTracker = null
+                                
+                                val minThreshold = 80 * resources.displayMetrics.density
+                                val maxThreshold = screenHeight * 0.15f
+                                val threshold = minThreshold.coerceAtMost(maxThreshold)
+                                val velocityThreshold = 500f
+                                
+                                if (currentTranslation > threshold || deltaY > threshold || velocityY > velocityThreshold) {
+                                    (activity as? com.cykrome.launcher.ui.LauncherActivity)?.closeAppDrawer()
+                                } else {
+                                    drawerContainer.animate()
+                                        .translationY(0f)
+                                        .alpha(1f)
+                                        .setDuration(300)
+                                        .setInterpolator(android.view.animation.DecelerateInterpolator())
+                                        .start()
+                                }
+                            }
+                            
+                            rv.parent?.requestDisallowInterceptTouchEvent(false)
+                            drawerContainer?.parent?.requestDisallowInterceptTouchEvent(false)
+                            isDragging = false
+                        }
+                    }
+                }
+            }
+        })
     }
     
     private fun startDragFromDrawer(app: AppInfo, recyclerView: androidx.recyclerview.widget.RecyclerView) {

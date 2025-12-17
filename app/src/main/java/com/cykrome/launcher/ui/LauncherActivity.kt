@@ -48,6 +48,7 @@ class LauncherActivity : AppCompatActivity() {
     private var isSwipeDownDetected: Boolean = false
     private var swipeDownStartX: Float = 0f
     private var isTrackingSwipeDown: Boolean = false
+    private var isDrawerOpen: Boolean = false
     
     // For wallpaper zoom animation
     private var currentWallpaperZoom = 1.1f // Default zoom (bit zoomed)
@@ -1239,6 +1240,20 @@ class LauncherActivity : AppCompatActivity() {
         var isRootTrackingSwipeDown = false
         
         rootLayout?.setOnTouchListener { v, event ->
+            // Check if drawer is visible - if so, don't intercept at all
+            val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+            val searchContainer = findViewById<View>(R.id.searchContainer)
+            val isDrawerVisible = drawerContainer?.visibility == View.VISIBLE && drawerContainer.alpha >= 0.5f
+            val isSearchVisible = searchContainer?.visibility == View.VISIBLE
+            val isOnHomeScreen = !isDrawerVisible && !isSearchVisible
+            
+            // If drawer is visible and we're not dragging, completely bypass this listener
+            // Return false immediately so events go to child views (RecyclerView)
+            if (isDrawerVisible && !isDraggingDrawer) {
+                android.util.Log.d("LauncherActivity", "RootLayout: Drawer visible - bypassing touch listener")
+                return@setOnTouchListener false
+            }
+            
             android.util.Log.d("LauncherActivity", "RootLayout touch: action=${event.action}, x=${event.x}, y=${event.y}")
             
             // If we're dragging, consume all events immediately
@@ -1260,7 +1275,7 @@ class LauncherActivity : AppCompatActivity() {
                 }
             }
             
-            // Handle swipe down detection at root level
+            // Handle swipe down detection at root level (only when on home screen)
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     rootSwipeDownStartY = event.y
@@ -1275,7 +1290,8 @@ class LauncherActivity : AppCompatActivity() {
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (isRootTrackingSwipeDown && !isDraggingDrawer) {
+                    // Only track swipe down when on home screen
+                    if (isRootTrackingSwipeDown && !isDraggingDrawer && isOnHomeScreen) {
                         val deltaY = event.y - rootSwipeDownStartY
                         val deltaX = Math.abs(event.x - rootSwipeDownStartX)
                         val absDeltaY = Math.abs(deltaY)
@@ -1285,18 +1301,10 @@ class LauncherActivity : AppCompatActivity() {
                         
                         // Check if it's a vertical swipe down
                         if (deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
-                            // Check if we're on home screen
-                            val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
-                            val searchContainer = findViewById<View>(R.id.searchContainer)
-                            val isOnHomeScreen = (drawerContainer?.visibility != View.VISIBLE || drawerContainer.alpha < 0.5f) &&
-                                                searchContainer?.visibility != View.VISIBLE
-                            
-                            if (isOnHomeScreen) {
-                                android.util.Log.d("LauncherActivity", "RootLayout: Swipe down detected! Calling handleGesture")
-                                isRootTrackingSwipeDown = false
-                                handleGesture(preferences.swipeDownAction)
-                                return@setOnTouchListener true
-                            }
+                            android.util.Log.d("LauncherActivity", "RootLayout: Swipe down detected! Calling handleGesture")
+                            isRootTrackingSwipeDown = false
+                            handleGesture(preferences.swipeDownAction)
+                            return@setOnTouchListener true
                         }
                         
                         // If horizontal movement is too much, cancel tracking
@@ -1353,6 +1361,27 @@ class LauncherActivity : AppCompatActivity() {
         event?.let {
             android.util.Log.d("LauncherActivity", "dispatchTouchEvent: action=${it.action}, x=${it.x}, y=${it.y}")
             
+            // Check if drawer is visible - if so, don't intercept swipe down gestures
+            // Let the RecyclerView handle scrolling normally
+            val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
+            val searchContainer = findViewById<View>(R.id.searchContainer)
+            val isDrawerVisible = drawerContainer?.visibility == View.VISIBLE && drawerContainer.alpha >= 0.5f
+            val isSearchVisible = searchContainer?.visibility == View.VISIBLE
+            val isOnHomeScreen = !isDrawerVisible && !isSearchVisible
+            
+            // If drawer is visible and we're not dragging, immediately pass event through to RecyclerView
+            if (isDrawerVisible && !isDraggingDrawer) {
+                android.util.Log.d("LauncherActivity", "Drawer visible - passing event through to RecyclerView")
+                val result = super.dispatchTouchEvent(event)
+                android.util.Log.d("LauncherActivity", "dispatchTouchEvent returning: $result")
+                return result
+            }
+            
+            // If drawer is open (legacy check), return true to allow RecyclerView to handle touch events
+            if (isDrawerOpen && !isDraggingDrawer) {
+                return super.dispatchTouchEvent(event) ?: true
+            }
+            
             // If already dragging, intercept all events
             if (isDraggingDrawer) {
                 when (it.action) {
@@ -1369,20 +1398,31 @@ class LauncherActivity : AppCompatActivity() {
                 }
             }
             
-            // Handle swipe down gesture detection directly
+            // Handle swipe down gesture detection directly (only when on home screen)
             when (it.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    android.util.Log.d("LauncherActivity", "ACTION_DOWN: y=${it.y}, shouldStartDrawerDrag=${shouldStartDrawerDrag(it)}")
-                    // Track swipe down from anywhere on screen (but not if we're starting drawer drag)
-                    if (!shouldStartDrawerDrag(it)) {
-                        swipeDownStartY = it.y
-                        swipeDownStartX = it.x
-                        isTrackingSwipeDown = true
-                        isSwipeDownDetected = false
-                        android.util.Log.d("LauncherActivity", "Started tracking swipe down from y=${it.y}")
-                    } else {
+                    android.util.Log.d("LauncherActivity", "ACTION_DOWN: y=${it.y}, shouldStartDrawerDrag=${shouldStartDrawerDrag(it)}, isDrawerVisible=$isDrawerVisible")
+                    
+                    // Don't track swipe down if drawer is visible - let RecyclerView handle it
+                    if (isDrawerVisible) {
                         isTrackingSwipeDown = false
-                        android.util.Log.d("LauncherActivity", "Not tracking swipe down - drawer drag zone")
+                        android.util.Log.d("LauncherActivity", "Drawer visible - not tracking swipe down, letting RecyclerView handle")
+                        // Pass through to RecyclerView
+                        val result = super.dispatchTouchEvent(event)
+                        android.util.Log.d("LauncherActivity", "dispatchTouchEvent returning: $result")
+                        return result
+                    } else {
+                        // Track swipe down from anywhere on screen (but not if we're starting drawer drag)
+                        if (!shouldStartDrawerDrag(it)) {
+                            swipeDownStartY = it.y
+                            swipeDownStartX = it.x
+                            isTrackingSwipeDown = true
+                            isSwipeDownDetected = false
+                            android.util.Log.d("LauncherActivity", "Started tracking swipe down from y=${it.y}")
+                        } else {
+                            isTrackingSwipeDown = false
+                            android.util.Log.d("LauncherActivity", "Not tracking swipe down - drawer drag zone")
+                        }
                     }
                     
                     // For ACTION_DOWN in drag zone, intercept to start dragging
@@ -1397,7 +1437,8 @@ class LauncherActivity : AppCompatActivity() {
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    if (isTrackingSwipeDown && !isSwipeDownDetected && !isDraggingDrawer) {
+                    // Only track swipe down when on home screen (not when drawer is visible)
+                    if (isTrackingSwipeDown && !isSwipeDownDetected && !isDraggingDrawer && isOnHomeScreen) {
                         val deltaY = it.y - swipeDownStartY
                         val deltaX = Math.abs(it.x - swipeDownStartX)
                         val absDeltaY = Math.abs(deltaY)
@@ -1407,21 +1448,11 @@ class LauncherActivity : AppCompatActivity() {
                         
                         // Check if it's a vertical swipe down (not horizontal)
                         if (deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
-                            // Check if we're on home screen (not in drawer or search)
-                            val drawerContainer = findViewById<View>(R.id.appDrawerContainer)
-                            val searchContainer = findViewById<View>(R.id.searchContainer)
-                            val isOnHomeScreen = (drawerContainer?.visibility != View.VISIBLE || drawerContainer.alpha < 0.5f) &&
-                                                searchContainer?.visibility != View.VISIBLE
-                            
-                            android.util.Log.d("LauncherActivity", "Swipe down detected! isOnHomeScreen=$isOnHomeScreen")
-                            
-                            if (isOnHomeScreen) {
-                                android.util.Log.d("LauncherActivity", "Swipe down detected in dispatchTouchEvent, deltaY: $absDeltaY")
-                                isSwipeDownDetected = true
-                                isTrackingSwipeDown = false
-                                handleGesture(preferences.swipeDownAction)
-                                return true
-                            }
+                            android.util.Log.d("LauncherActivity", "Swipe down detected in dispatchTouchEvent, deltaY: $absDeltaY")
+                            isSwipeDownDetected = true
+                            isTrackingSwipeDown = false
+                            handleGesture(preferences.swipeDownAction)
+                            return true
                         }
                         
                         // If horizontal movement is too much, cancel tracking
@@ -1429,11 +1460,24 @@ class LauncherActivity : AppCompatActivity() {
                             android.util.Log.d("LauncherActivity", "Cancelling swipe down tracking - too much horizontal movement")
                             isTrackingSwipeDown = false
                         }
+                    } else if (isDrawerVisible) {
+                        // Drawer is visible - don't intercept, let RecyclerView handle scrolling
+                        android.util.Log.d("LauncherActivity", "Drawer visible - not intercepting, letting RecyclerView handle scroll")
+                        // Pass through to RecyclerView
+                        val result = super.dispatchTouchEvent(event)
+                        android.util.Log.d("LauncherActivity", "dispatchTouchEvent returning: $result")
+                        return result
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     android.util.Log.d("LauncherActivity", "ACTION_UP/CANCEL: isTrackingSwipeDown=$isTrackingSwipeDown")
                     isTrackingSwipeDown = false
+                    if (isDrawerVisible && !isDraggingDrawer) {
+                        // Pass through to RecyclerView
+                        val result = super.dispatchTouchEvent(event)
+                        android.util.Log.d("LauncherActivity", "dispatchTouchEvent returning: $result")
+                        return result
+                    }
                 }
             }
         }
@@ -1795,6 +1839,7 @@ class LauncherActivity : AppCompatActivity() {
                 }
                 
                 android.util.Log.d("LauncherActivity", "App drawer opened with animation")
+                isDrawerOpen = true
             }
         } catch (e: Exception) {
             android.util.Log.e("LauncherActivity", "Error opening app drawer: ${e.message}", e)
@@ -1831,6 +1876,8 @@ class LauncherActivity : AppCompatActivity() {
             interpolator = android.view.animation.DecelerateInterpolator()
             start()
         }
+        
+        isDrawerOpen = false
     }
     
     fun focusDrawerSearch() {
