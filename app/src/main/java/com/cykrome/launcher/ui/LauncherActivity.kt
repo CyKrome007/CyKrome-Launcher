@@ -2038,6 +2038,7 @@ class LauncherActivity : AppCompatActivity() {
         }
     }
     
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         when {
             findViewById<View>(R.id.searchContainer).visibility == View.VISIBLE -> {
@@ -2049,6 +2050,7 @@ class LauncherActivity : AppCompatActivity() {
             else -> {
                 // Do nothing when back button is pressed on home screen
                 // This prevents showing recents activity
+                super.onBackPressed()
             }
         }
     }

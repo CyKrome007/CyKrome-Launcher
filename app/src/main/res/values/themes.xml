@@ -13,8 +13,6 @@
         <!-- Text colors that adapt to theme -->
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
-        <!-- Follow system night mode -->
-        <item name="android:forceDarkAllowed">false</item>
     </style>
 
     <style name="Theme.CyKromeLauncher.Transparent" parent="Theme.CyKromeLauncher">
