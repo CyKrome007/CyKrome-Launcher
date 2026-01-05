@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -24,6 +25,9 @@ class HomeScreenFragment : Fragment() {
     private var apps: List<AppInfo> = emptyList()
     private var dockContainer: View? = null
     private var pageIndicator: com.google.android.material.tabs.TabLayout? = null
+    private var customizationOverlay: View? = null
+    private var editModePageIndicator: com.google.android.material.tabs.TabLayout? = null
+    var isCustomizationMode = false
     
     companion object {
         fun newInstance(): HomeScreenFragment {
@@ -46,58 +50,8 @@ class HomeScreenFragment : Fragment() {
             preferences = LauncherPreferences(requireContext())
             homePager = view.findViewById(R.id.homePager)
             
-            // Set up gesture interceptor for swipe up to open app drawer and swipe down for notifications
-            var swipeDownStartY = 0f
-            var swipeDownStartX = 0f
-            var isTrackingSwipeDown = false
-            
-            homePager.setOnTouchListener { v, event ->
-                android.util.Log.d("HomeScreenFragment", "ViewPager2 touch: action=${event.action}, x=${event.x}, y=${event.y}")
-                
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        swipeDownStartY = event.y
-                        swipeDownStartX = event.x
-                        isTrackingSwipeDown = true
-                        android.util.Log.d("HomeScreenFragment", "Started tracking swipe down in ViewPager2")
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        if (isTrackingSwipeDown) {
-                            val deltaY = event.y - swipeDownStartY
-                            val deltaX = Math.abs(event.x - swipeDownStartX)
-                            val absDeltaY = Math.abs(deltaY)
-                            val minSwipeDistance = android.view.ViewConfiguration.get(v.context).scaledTouchSlop * 2
-                            
-                            android.util.Log.d("HomeScreenFragment", "MOVE: deltaY=$deltaY, deltaX=$deltaX, absDeltaY=$absDeltaY, min=$minSwipeDistance")
-                            
-                            // Check if it's a vertical swipe down (not horizontal)
-                            if (deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
-                                android.util.Log.d("HomeScreenFragment", "Swipe down detected in ViewPager2! Calling handleGesture")
-                                isTrackingSwipeDown = false
-                                (activity as? com.cykrome.launcher.ui.LauncherActivity)?.let { launcher ->
-                                    val prefs = com.cykrome.launcher.data.LauncherPreferences(v.context)
-                                    android.util.Log.d("HomeScreenFragment", "Swipe down action: ${prefs.swipeDownAction}")
-                                    launcher.handleGesture(prefs.swipeDownAction)
-                                }
-                                return@setOnTouchListener true
-                            }
-                            
-                            // If horizontal movement is too much, cancel tracking
-                            if (deltaX > absDeltaY) {
-                                isTrackingSwipeDown = false
-                            }
-                        }
-                    }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        isTrackingSwipeDown = false
-                    }
-                }
-                
-                // Forward touch events to parent activity for other gestures (swipe up, drawer drag)
-                val handled = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.onTouchEvent(event) ?: false
-                // If parent is handling it (e.g., dragging drawer), consume it here too
-                handled
-            }
+            // Set up combined gesture interceptor for swipe down, long press, and other gestures
+            setupCombinedTouchListener()
             
             // Home screen is empty by default - no need to load apps
             // Just set up the pager with empty list
@@ -105,6 +59,7 @@ class HomeScreenFragment : Fragment() {
                 setupHomePager()
                 setupDock(view)
                 setupDockSearch(view)
+                setupCustomizationOverlay(view)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -235,10 +190,16 @@ class HomeScreenFragment : Fragment() {
                     // Hide dock on Cards page (position 0), show on home screen pages
                     dockContainer?.visibility = if (position == 0) View.GONE else View.VISIBLE
                     // Hide page indicator on Cards page (position 0), show on home screen pages
-                    pageIndicator?.visibility = if (position == 0) View.GONE else View.VISIBLE
+                    if (!isCustomizationMode) {
+                        pageIndicator?.visibility = if (position == 0) View.GONE else View.VISIBLE
+                    }
                     // Update tab selection for home screen pages only (map position 1 -> tab 0, position 2 -> tab 1, etc.)
                     if (position > 0 && position - 1 < homeScreenPageCount) {
                         pageIndicator?.getTabAt(position - 1)?.select()
+                        // Also update edit mode indicator
+                        if (isCustomizationMode && position - 1 < homeScreenPageCount) {
+                            editModePageIndicator?.getTabAt(position - 1)?.select()
+                        }
                     }
                 }
             })
@@ -288,6 +249,12 @@ class HomeScreenFragment : Fragment() {
         if (isAdded && currentView != null) {
             setupHomePager()
             setupDock(currentView)
+            // Update edit mode indicators if in customization mode
+            if (isCustomizationMode) {
+                homePager.post {
+                    updateEditModePageIndicators()
+                }
+            }
         }
     }
     
@@ -578,6 +545,455 @@ class HomeScreenFragment : Fragment() {
         }
     }
     
+    private fun setupCustomizationOverlay(view: View) {
+        try {
+            // Inflate the customization overlay
+            // Add it to the fragment's root view (which is a ConstraintLayout)
+            val rootView = view as? ViewGroup
+            val overlayView = LayoutInflater.from(requireContext()).inflate(
+                R.layout.customization_overlay,
+                rootView,
+                false
+            )
+            
+            customizationOverlay = overlayView
+            editModePageIndicator = overlayView.findViewById(R.id.editModePageIndicator)
+            
+            // Initially hide the overlay
+            overlayView.visibility = View.GONE
+            
+            // Add overlay to the fragment's root view
+            rootView?.addView(overlayView)
+            
+            // Set up click listener to dismiss overlay when clicking outside (but not on interactive elements)
+            // Use a simpler approach: let child views handle their clicks first, overlay only handles background clicks
+            overlayView.setOnClickListener {
+                // This will only fire if no child view consumed the click
+                hideCustomizationOverlay()
+            }
+            
+            // Prevent clicks on menu bar from dismissing overlay
+            overlayView.findViewById<View>(R.id.customizationMenuBar)?.setOnClickListener {
+                // Do nothing - prevent dismissal
+            }
+            
+            // Prevent clicks on page indicators from dismissing overlay
+            overlayView.findViewById<View>(R.id.pageIndicatorContainer)?.setOnClickListener {
+                // Do nothing - prevent dismissal
+            }
+            
+            // Set up menu bar button clicks
+            setupMenuBarButtons(overlayView)
+            
+            // Set up add page button - use FrameLayout like other menu buttons
+            val addPageButton = overlayView.findViewById<View>(R.id.addPageButton)
+            addPageButton?.setOnClickListener {
+                android.util.Log.d("HomeScreenFragment", "Add page button clicked! Button: $addPageButton")
+                addNewPage()
+            }
+            android.util.Log.d("HomeScreenFragment", "Add page button setup: ${addPageButton != null}")
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error setting up customization overlay: ${e.message}", e)
+        }
+    }
+    
+    private fun setupCombinedTouchListener() {
+        var swipeDownStartY = 0f
+        var swipeDownStartX = 0f
+        var isTrackingSwipeDown = false
+        var longPressStartX = 0f
+        var longPressStartY = 0f
+        var isLongPressDetected = false
+        var longPressRunnable: Runnable? = null
+        
+        homePager.setOnTouchListener { v, event ->
+            android.util.Log.d("HomeScreenFragment", "ViewPager2 touch: action=${event.action}, x=${event.x}, y=${event.y}, isCustomizationMode=$isCustomizationMode")
+            
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    swipeDownStartY = event.y
+                    swipeDownStartX = event.x
+                    isTrackingSwipeDown = true
+                    
+                    // Set up long press detection if not in customization mode
+                    if (!isCustomizationMode) {
+                        longPressStartX = event.x
+                        longPressStartY = event.y
+                        isLongPressDetected = false
+                        
+                        // Post a delayed runnable to show overlay after long press timeout
+                        longPressRunnable = Runnable {
+                            if (!isLongPressDetected && !isCustomizationMode) {
+                                android.util.Log.d("HomeScreenFragment", "Long press detected! Showing customization overlay")
+                                showCustomizationOverlay()
+                                isLongPressDetected = true
+                            }
+                        }
+                        val longPressTimeout = android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                        android.util.Log.d("HomeScreenFragment", "Scheduling long press detection with timeout: ${longPressTimeout}ms")
+                        v.postDelayed(longPressRunnable!!, longPressTimeout)
+                    }
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (isTrackingSwipeDown) {
+                        val deltaY = event.y - swipeDownStartY
+                        val deltaX = Math.abs(event.x - swipeDownStartX)
+                        val absDeltaY = Math.abs(deltaY)
+                        val minSwipeDistance = android.view.ViewConfiguration.get(v.context).scaledTouchSlop * 2
+                        
+                        // Check if it's a vertical swipe down (not horizontal)
+                        if (deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
+                            android.util.Log.d("HomeScreenFragment", "Swipe down detected in ViewPager2! Calling handleGesture")
+                            isTrackingSwipeDown = false
+                            // Cancel long press if swipe down detected
+                            longPressRunnable?.let { v.removeCallbacks(it) }
+                            longPressRunnable = null
+                            (activity as? com.cykrome.launcher.ui.LauncherActivity)?.let { launcher ->
+                                val prefs = com.cykrome.launcher.data.LauncherPreferences(v.context)
+                                launcher.handleGesture(prefs.swipeDownAction)
+                            }
+                            return@setOnTouchListener true
+                        }
+                        
+                        // If horizontal movement is too much, cancel tracking
+                        if (deltaX > absDeltaY) {
+                            isTrackingSwipeDown = false
+                        }
+                    }
+                    
+                    // Handle long press cancellation on movement
+                    if (!isCustomizationMode && !isLongPressDetected && longPressRunnable != null) {
+                        val deltaX = Math.abs(event.x - longPressStartX)
+                        val deltaY = Math.abs(event.y - longPressStartY)
+                        val distance = Math.sqrt((deltaX * deltaX + deltaY * deltaY).toDouble()).toFloat()
+                        
+                        // If moved too much, cancel long press (increased threshold)
+                        val touchSlop = android.view.ViewConfiguration.get(v.context).scaledTouchSlop
+                        val movementThreshold = touchSlop * 4 // Increased from 2 to 4
+                        if (distance > movementThreshold) {
+                            android.util.Log.d("HomeScreenFragment", "Long press cancelled due to movement: distance=$distance, threshold=$movementThreshold")
+                            longPressRunnable?.let { v.removeCallbacks(it) }
+                            longPressRunnable = null
+                        }
+                    }
+                    false
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    isTrackingSwipeDown = false
+                    longPressRunnable?.let { homePager.removeCallbacks(it) }
+                    longPressRunnable = null
+                    isLongPressDetected = false
+                    false
+                }
+                else -> false
+            }
+            
+            // Forward touch events to parent activity for other gestures (swipe up, drawer drag)
+            val handled = (activity as? com.cykrome.launcher.ui.LauncherActivity)?.onTouchEvent(event) ?: false
+            // If parent is handling it (e.g., dragging drawer), consume it here too
+            handled
+        }
+    }
+    
+    
+    fun showCustomizationOverlay() {
+        try {
+            customizationOverlay?.let { overlay ->
+                isCustomizationMode = true
+                overlay.visibility = View.VISIBLE
+                
+                // Update page indicators in edit mode
+                updateEditModePageIndicators()
+                
+                // Hide regular page indicator
+                pageIndicator?.visibility = View.GONE
+                
+                // Hide dock with slide down animation
+                dockContainer?.let { dock ->
+                    dock.animate()
+                        .translationY(dock.height.toFloat())
+                        .alpha(0f)
+                        .setDuration(200)
+                        .withEndAction {
+                            dock.visibility = View.GONE
+                        }
+                        .start()
+                }
+                
+                // Set up back button handler
+                setupBackButtonHandler()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error showing customization overlay: ${e.message}", e)
+        }
+    }
+    
+    fun hideCustomizationOverlay() {
+        try {
+            customizationOverlay?.let { overlay ->
+                isCustomizationMode = false
+                overlay.visibility = View.GONE
+                
+                // Show regular page indicator
+                val currentPage = homePager.currentItem
+                pageIndicator?.visibility = if (currentPage == 0) View.GONE else View.VISIBLE
+                
+                // Show dock with slide up animation
+                dockContainer?.let { dock ->
+                    dock.visibility = View.VISIBLE
+                    dock.translationY = dock.height.toFloat()
+                    dock.alpha = 0f
+                    dock.animate()
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setDuration(200)
+                        .start()
+                }
+                
+                // Remove back button handler
+                removeBackButtonHandler()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error hiding customization overlay: ${e.message}", e)
+        }
+    }
+    
+    private var backButtonCallback: OnBackPressedCallback? = null
+    
+    private fun setupBackButtonHandler() {
+        removeBackButtonHandler() // Remove any existing callback first
+        
+        backButtonCallback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                hideCustomizationOverlay()
+            }
+        }
+        requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backButtonCallback!!)
+    }
+    
+    private fun removeBackButtonHandler() {
+        backButtonCallback?.remove()
+        backButtonCallback = null
+    }
+    
+    private fun updateEditModePageIndicators() {
+        try {
+            editModePageIndicator?.let { indicator ->
+                val adapter = homePager.adapter as? DesktopPageAdapter
+                val pageCount = adapter?.itemCount ?: 1
+                val homeScreenPageCount = (pageCount - 1).coerceAtLeast(1) // Exclude Cards page
+                
+                // Remove existing listener to avoid duplicates
+                indicator.clearOnTabSelectedListeners()
+                indicator.removeAllTabs()
+                
+                for (i in 0 until homeScreenPageCount) {
+                    indicator.addTab(indicator.newTab())
+                }
+                
+                // Post to ensure tabs are laid out, then fix their dimensions to maintain circular shape
+                indicator.post {
+                    for (i in 0 until indicator.tabCount) {
+                        val tab = indicator.getTabAt(i)
+                        tab?.let {
+                            try {
+                                val tabView = it.view
+                                val density = resources.displayMetrics.density
+                                val size = (10 * density).toInt()
+                                // Remove all padding to prevent elongation
+                                tabView.setPadding(0, 0, 0, 0)
+                                // Set fixed dimensions to maintain circular shape
+                                tabView.minimumHeight = size
+                                tabView.minimumWidth = size
+                                // Force layout params to maintain square shape
+                                val layoutParams = tabView.layoutParams
+                                if (layoutParams != null) {
+                                    layoutParams.height = size
+                                    layoutParams.width = size
+                                    tabView.layoutParams = layoutParams
+                                } else {
+                                    // Create new layout params if null
+                                    val newParams = android.view.ViewGroup.LayoutParams(size, size)
+                                    tabView.layoutParams = newParams
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("HomeScreenFragment", "Error setting tab dimensions: ${e.message}")
+                            }
+                        }
+                    }
+                }
+                
+                // Set current page selection
+                val currentPage = homePager.currentItem
+                if (currentPage > 0 && currentPage - 1 < homeScreenPageCount) {
+                    indicator.getTabAt(currentPage - 1)?.select()
+                }
+                
+                // Add listener for page changes
+                indicator.addOnTabSelectedListener(object : com.google.android.material.tabs.TabLayout.OnTabSelectedListener {
+                    override fun onTabSelected(tab: com.google.android.material.tabs.TabLayout.Tab?) {
+                        tab?.let {
+                            val pageIndex = it.position
+                            // Map tab index to ViewPager position (tab 0 = page 1, tab 1 = page 2, etc.)
+                            homePager.setCurrentItem(pageIndex + 1, true)
+                        }
+                    }
+                    override fun onTabUnselected(tab: com.google.android.material.tabs.TabLayout.Tab?) {}
+                    override fun onTabReselected(tab: com.google.android.material.tabs.TabLayout.Tab?) {}
+                })
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error updating edit mode page indicators: ${e.message}", e)
+        }
+    }
+    
+    private fun setupMenuBarButtons(overlayView: View) {
+        try {
+            // Widgets button
+            overlayView.findViewById<View>(R.id.widgetsButton)?.setOnClickListener {
+                android.widget.Toast.makeText(
+                    requireContext(),
+                    "Widgets feature coming soon",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            
+            // Effects button
+            overlayView.findViewById<View>(R.id.effectsButton)?.setOnClickListener {
+                // Open scroll effects settings
+                val intent = android.content.Intent(requireContext(), com.cykrome.launcher.ui.settings.SettingsActivity::class.java)
+                startActivity(intent)
+                hideCustomizationOverlay()
+            }
+            
+            // Wallpapers button
+            overlayView.findViewById<View>(R.id.wallpapersButton)?.setOnClickListener {
+                // Open wallpaper picker
+                try {
+                    val intent = android.content.Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    // Fallback to system wallpaper picker
+                    try {
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SET_WALLPAPER)
+                        startActivity(android.content.Intent.createChooser(intent, "Select Wallpaper"))
+                    } catch (e2: Exception) {
+                        android.widget.Toast.makeText(
+                            requireContext(),
+                            "Wallpaper picker not available",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+                hideCustomizationOverlay()
+            }
+            
+            // CyKrome Settings button
+            overlayView.findViewById<View>(R.id.homeSettingsButton)?.setOnClickListener {
+                // Open CyKrome Settings
+                val intent = android.content.Intent(requireContext(), com.cykrome.launcher.ui.settings.SettingsActivity::class.java)
+                startActivity(intent)
+                hideCustomizationOverlay()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error setting up menu bar buttons: ${e.message}", e)
+        }
+    }
+    
+    fun addNewPage() {
+        try {
+            android.util.Log.d("HomeScreenFragment", "addNewPage() called")
+            
+            // Get current adapter to check current page count
+            val currentAdapter = homePager.adapter as? DesktopPageAdapter
+            val currentAdapterItemCount = currentAdapter?.itemCount ?: 1
+            val currentHomeScreenPages = (currentAdapterItemCount - 1).coerceAtLeast(1) // Exclude Cards page
+            
+            android.util.Log.d("HomeScreenFragment", "Current adapter item count: $currentAdapterItemCount, home screen pages: $currentHomeScreenPages")
+            
+            // Calculate new page count
+            val newPageCount = currentHomeScreenPages + 1
+            
+            // Save to preferences (use commit for synchronous write)
+            val sharedPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(requireContext())
+            sharedPrefs.edit().putInt("home_screen_page_count", newPageCount).commit()
+            android.util.Log.d("HomeScreenFragment", "Saved new page count: $newPageCount")
+            
+            // Reload home screen items
+            val homeScreenItems = com.cykrome.launcher.util.HomeScreenManager.loadHomeScreenItems(requireContext())
+            val appItems = homeScreenItems.filterIsInstance<com.cykrome.launcher.model.HomeScreenItem.AppItem>()
+            
+            // Convert to AppInfo list
+            val homeScreenApps = mutableListOf<AppInfo>()
+            val packageManager = requireContext().packageManager
+            appItems.forEach { item ->
+                try {
+                    val appInfo = packageManager.getApplicationInfo(item.packageName, 0)
+                    val label = packageManager.getApplicationLabel(appInfo).toString()
+                    val icon = packageManager.getApplicationIcon(appInfo)
+                    val launchIntent = packageManager.getLaunchIntentForPackage(item.packageName)
+                    val activityName = launchIntent?.component?.className ?: item.activityName
+                    
+                    homeScreenApps.add(AppInfo(
+                        packageName = item.packageName,
+                        activityName = activityName,
+                        label = label,
+                        icon = icon,
+                        applicationInfo = appInfo
+                    ))
+                } catch (e: Exception) {
+                    android.util.Log.w("HomeScreenFragment", "Could not load app ${item.packageName}: ${e.message}")
+                }
+            }
+            
+            // Create new adapter with new page count
+            val newAdapter = DesktopPageAdapter(this, homeScreenApps, appItems, preferences, newPageCount)
+            android.util.Log.d("HomeScreenFragment", "Created new adapter with page count: $newPageCount, item count: ${newAdapter.itemCount}")
+            
+            // Set the new adapter
+            homePager.adapter = newAdapter
+            
+            // Wait for adapter to be ready, then navigate and update indicators
+            homePager.postDelayed({
+                try {
+                    val finalAdapter = homePager.adapter as? DesktopPageAdapter
+                    val finalItemCount = finalAdapter?.itemCount ?: newAdapter.itemCount
+                    android.util.Log.d("HomeScreenFragment", "Final adapter item count: $finalItemCount, expected: ${newPageCount + 1}")
+                    
+                    if (finalItemCount > 1) {
+                        // Update edit mode indicators
+                        updateEditModePageIndicators()
+                        
+                        // Navigate to the new page (last page)
+                        val newPagePosition = finalItemCount - 1
+                        android.util.Log.d("HomeScreenFragment", "Navigating to new page at position: $newPagePosition")
+                        homePager.setCurrentItem(newPagePosition, true)
+                        
+                        android.widget.Toast.makeText(
+                            requireContext(),
+                            "New page added",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        android.util.Log.w("HomeScreenFragment", "Adapter item count is still 1, expected: ${newPageCount + 1}")
+                        android.widget.Toast.makeText(
+                            requireContext(),
+                            "Failed to add page. Current: $finalItemCount, Expected: ${newPageCount + 1}",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("HomeScreenFragment", "Error in addNewPage post: ${e.message}", e)
+                    e.printStackTrace()
+                }
+            }, 100) // Small delay to ensure adapter is set
+        } catch (e: Exception) {
+            android.util.Log.e("HomeScreenFragment", "Error adding new page: ${e.message}", e)
+            e.printStackTrace()
+        }
+    }
+    
     fun addAppToHomeScreen(packageName: String, activityName: String) {
         // Find first available position on home screen
         val gridColumns = preferences.homeGridColumns
@@ -705,6 +1121,7 @@ class DesktopPageFragment : Fragment() {
     private lateinit var appItems: List<com.cykrome.launcher.model.HomeScreenItem.AppItem>
     private lateinit var preferences: LauncherPreferences
     private var swipeStartY = 0f
+    private var recyclerView: androidx.recyclerview.widget.RecyclerView? = null
     
     companion object {
         fun newInstance(apps: List<AppInfo>, appItems: List<com.cykrome.launcher.model.HomeScreenItem.AppItem>, preferences: LauncherPreferences): DesktopPageFragment {
@@ -728,13 +1145,13 @@ class DesktopPageFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         
         try {
-            val recyclerView = view.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.desktopGrid)
+            recyclerView = view.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.desktopGrid)
             val columns = preferences.homeGridColumns
             val layoutManager = GridLayoutManager(requireContext(), columns)
-            recyclerView.layoutManager = layoutManager
+            recyclerView?.layoutManager = layoutManager
             
             // Ensure RecyclerView can scroll vertically
-            recyclerView.isNestedScrollingEnabled = true
+            recyclerView?.isNestedScrollingEnabled = true
             
             // Add top padding to RecyclerView to account for search bar and status bar
             val statusBarHeight = getStatusBarHeightForPage()
@@ -742,22 +1159,27 @@ class DesktopPageFragment : Fragment() {
             val extraPadding = (16 * resources.displayMetrics.density).toInt() // 16dp
             val totalTopPadding = statusBarHeight + searchBarHeight + extraPadding
             
-            recyclerView.setPadding(
-                recyclerView.paddingLeft,
+            recyclerView?.setPadding(
+                recyclerView?.paddingLeft ?: 0,
                 totalTopPadding,
-                recyclerView.paddingRight,
-                recyclerView.paddingBottom
+                recyclerView?.paddingRight ?: 0,
+                recyclerView?.paddingBottom ?: 0
             )
             
             // Set up drag and drop listener for apps from drawer
-            setupDragAndDropFromDrawer(recyclerView)
+            recyclerView?.let { setupDragAndDropFromDrawer(it) }
             
-            // Set up gesture interceptor for swipe up to open app drawer and swipe down for notifications
-            // Use a custom touch listener that checks for swipe gestures
+            // Set up gesture interceptor for swipe up to open app drawer, swipe down for notifications, and long press for customization
+            // Use a custom touch listener that checks for swipe gestures and long press
             var swipeDownStartX = 0f
             var isTrackingSwipeDown = false
+            var longPressStartX = 0f
+            var longPressStartY = 0f
+            var isLongPressDetected = false
+            var longPressRunnable: Runnable? = null
+            var isTouchOnIcon = false
             
-            recyclerView.setOnTouchListener { v, event ->
+            recyclerView?.setOnTouchListener { v, event ->
                 android.util.Log.d("DesktopPageFragment", "RecyclerView touch: action=${event.action}, x=${event.x}, y=${event.y}")
                 
                 when (event.action) {
@@ -765,7 +1187,29 @@ class DesktopPageFragment : Fragment() {
                         swipeStartY = event.y
                         swipeDownStartX = event.x
                         isTrackingSwipeDown = true
-                        android.util.Log.d("DesktopPageFragment", "Started tracking swipe in RecyclerView")
+                        
+                        // Check if touch is on an app icon
+                        isTouchOnIcon = isTouchOnAppIcon(event.x, event.y)
+                        
+                        // Set up long press detection if not touching an icon
+                        val homeScreenFragment = parentFragment as? HomeScreenFragment
+                        if (!isTouchOnIcon && homeScreenFragment != null && !homeScreenFragment.isCustomizationMode) {
+                            longPressStartX = event.x
+                            longPressStartY = event.y
+                            isLongPressDetected = false
+                            
+                            longPressRunnable = Runnable {
+                                if (!isLongPressDetected && !isTouchOnIcon) {
+                                    android.util.Log.d("DesktopPageFragment", "Long press detected on empty area! Showing customization overlay")
+                                    homeScreenFragment.showCustomizationOverlay()
+                                    isLongPressDetected = true
+                                }
+                            }
+                            val longPressTimeout = android.view.ViewConfiguration.getLongPressTimeout().toLong()
+                            v.postDelayed(longPressRunnable!!, longPressTimeout)
+                        }
+                        
+                        android.util.Log.d("DesktopPageFragment", "Started tracking swipe in RecyclerView, isTouchOnIcon=$isTouchOnIcon")
                         false
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
@@ -776,10 +1220,30 @@ class DesktopPageFragment : Fragment() {
                         
                         android.util.Log.d("DesktopPageFragment", "MOVE: deltaY=$deltaY, deltaX=$deltaX, absDeltaY=$absDeltaY")
                         
+                        // Handle long press cancellation on movement
+                        if (longPressRunnable != null && !isLongPressDetected) {
+                            val moveDeltaX = Math.abs(event.x - longPressStartX)
+                            val moveDeltaY = Math.abs(event.y - longPressStartY)
+                            val moveDistance = Math.sqrt((moveDeltaX * moveDeltaX + moveDeltaY * moveDeltaY).toDouble()).toFloat()
+                            
+                            val touchSlop = android.view.ViewConfiguration.get(v.context).scaledTouchSlop
+                            val movementThreshold = touchSlop * 4 // Increased threshold
+                            if (moveDistance > movementThreshold) {
+                                android.util.Log.d("DesktopPageFragment", "Long press cancelled due to movement: distance=$moveDistance, threshold=$movementThreshold")
+                                longPressRunnable?.let { v.removeCallbacks(it) }
+                                longPressRunnable = null
+                            }
+                        }
+                        
                         // Check for swipe down (for notifications)
                         if (isTrackingSwipeDown && deltaY > 0 && absDeltaY > deltaX && absDeltaY > minSwipeDistance) {
+                            // Cancel long press if swipe down detected
+                            longPressRunnable?.let { v.removeCallbacks(it) }
+                            longPressRunnable = null
+                            
                             // Check if RecyclerView is at the top (can't scroll up)
-                            if (!recyclerView.canScrollVertically(-1)) {
+                            val rv = recyclerView
+                            if (rv != null && !rv.canScrollVertically(-1)) {
                                 android.util.Log.d("DesktopPageFragment", "Swipe down detected in RecyclerView! Calling handleGesture")
                                 isTrackingSwipeDown = false
                                 (activity as? com.cykrome.launcher.ui.LauncherActivity)?.let { launcher ->
@@ -792,7 +1256,11 @@ class DesktopPageFragment : Fragment() {
                         }
                         
                         // If swiping up and RecyclerView is at the top, let parent handle it
-                        if (deltaY < -50 && !recyclerView.canScrollVertically(-1)) {
+                        val rv = recyclerView
+                        if (deltaY < -50 && rv != null && !rv.canScrollVertically(-1)) {
+                            // Cancel long press if swiping up
+                            longPressRunnable?.let { v.removeCallbacks(it) }
+                            longPressRunnable = null
                             // RecyclerView is at top and user is swiping up - let parent handle
                             (activity as? com.cykrome.launcher.ui.LauncherActivity)?.onTouchEvent(event)
                             isTrackingSwipeDown = false
@@ -809,8 +1277,14 @@ class DesktopPageFragment : Fragment() {
                         val deltaY = event.y - swipeStartY
                         isTrackingSwipeDown = false
                         
+                        // Cancel long press
+                        longPressRunnable?.let { v.removeCallbacks(it) }
+                        longPressRunnable = null
+                        isLongPressDetected = false
+                        
                         // If it was a swipe up and RecyclerView was at top, trigger app drawer
-                        if (deltaY < -100 && !recyclerView.canScrollVertically(-1)) {
+                        val rv = recyclerView
+                        if (deltaY < -100 && rv != null && !rv.canScrollVertically(-1)) {
                             (activity as? com.cykrome.launcher.ui.LauncherActivity)?.openAppDrawer()
                             true
                         } else {
@@ -819,6 +1293,9 @@ class DesktopPageFragment : Fragment() {
                     }
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         isTrackingSwipeDown = false
+                        longPressRunnable?.let { v.removeCallbacks(it) }
+                        longPressRunnable = null
+                        isLongPressDetected = false
                         false
                     }
                     else -> false
@@ -826,10 +1303,10 @@ class DesktopPageFragment : Fragment() {
             }
             
             val adapter = AppIconAdapter(apps.toMutableList(), preferences, requireContext())
-            recyclerView.adapter = adapter
+            recyclerView?.adapter = adapter
             
             // Set up drag and drop for rearranging apps
-            setupDragAndDrop(recyclerView, adapter)
+            recyclerView?.let { setupDragAndDrop(it, adapter) }
         } catch (e: Exception) {
             android.util.Log.e("DesktopPageFragment", "Error in onViewCreated: ${e.message}", e)
         }
@@ -960,6 +1437,33 @@ class DesktopPageFragment : Fragment() {
         })
         itemTouchHelper.attachToRecyclerView(recyclerView)
     }
+    
+    fun isTouchOnAppIcon(x: Float, y: Float): Boolean {
+        recyclerView?.let { rv ->
+            // Coordinates are relative to RecyclerView
+            // Find the child view at this position
+            for (i in 0 until rv.childCount) {
+                val child = rv.getChildAt(i)
+                val childLocation = IntArray(2)
+                child.getLocationOnScreen(childLocation)
+                val rvLocation = IntArray(2)
+                rv.getLocationOnScreen(rvLocation)
+                
+                // Convert touch coordinates to screen coordinates
+                val screenX = rvLocation[0] + x
+                val screenY = rvLocation[1] + y
+                
+                if (screenX >= childLocation[0] && screenX <= childLocation[0] + child.width &&
+                    screenY >= childLocation[1] && screenY <= childLocation[1] + child.height) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+    
+    val isCustomizationMode: Boolean
+        get() = (parentFragment as? HomeScreenFragment)?.isCustomizationMode ?: false
     
 }
 
