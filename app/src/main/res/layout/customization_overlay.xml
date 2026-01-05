@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#40000000">
+
+    <!-- Page indicators in edit mode with add button -->
+    <LinearLayout
+        android:id="@+id/pageIndicatorContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        app:layout_constraintBottom_toTopOf="@id/customizationMenuBar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/editModePageIndicator"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minHeight="0dp"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp"
+            android:paddingStart="0dp"
+            android:paddingEnd="0dp"
+            android:visibility="visible"
+            android:background="@android:color/transparent"
+            app:tabBackground="@drawable/tab_indicator"
+            app:tabGravity="center"
+            app:tabIndicatorHeight="0dp"
+            app:tabPaddingStart="0dp"
+            app:tabPaddingEnd="0dp"
+            app:tabPaddingTop="0dp"
+            app:tabPaddingBottom="0dp"
+            app:tabMinWidth="10dp"
+            app:tabMaxWidth="10dp"
+            app:tabContentStart="0dp" />
+
+        <!-- Add page button -->
+        <FrameLayout
+            android:id="@+id/addPageButton"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginStart="8dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_add_page"
+                android:background="@drawable/round_button_outline"
+                android:contentDescription="@string/add_page"
+                android:padding="4dp"
+                android:scaleType="fitCenter" />
+        </FrameLayout>
+
+    </LinearLayout>
+
+    <!-- Bottom menu bar -->
+    <LinearLayout
+        android:id="@+id/customizationMenuBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- Widgets -->
+        <FrameLayout
+            android:id="@+id/widgetsButton"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_margin="8dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_widgets"
+                android:background="@drawable/round_button_outline"
+                android:padding="12dp"
+                android:contentDescription="@string/widgets"
+                android:scaleType="fitCenter" />
+        </FrameLayout>
+
+        <!-- Effects -->
+        <FrameLayout
+            android:id="@+id/effectsButton"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_margin="8dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_effects"
+                android:background="@drawable/round_button_outline"
+                android:padding="12dp"
+                android:contentDescription="@string/effects"
+                android:scaleType="fitCenter" />
+        </FrameLayout>
+
+        <!-- Wallpapers -->
+        <FrameLayout
+            android:id="@+id/wallpapersButton"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_margin="8dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_wallpapers"
+                android:background="@drawable/round_button_outline"
+                android:padding="12dp"
+                android:contentDescription="@string/wallpaper"
+                android:scaleType="fitCenter" />
+        </FrameLayout>
+
+        <!-- CyKrome Settings -->
+        <FrameLayout
+            android:id="@+id/homeSettingsButton"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_margin="8dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackground">
+
+            <ImageView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_home_settings"
+                android:background="@drawable/round_button_outline"
+                android:padding="12dp"
+                android:contentDescription="@string/cykrome_settings"
+                android:scaleType="fitCenter" />
+        </FrameLayout>
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+

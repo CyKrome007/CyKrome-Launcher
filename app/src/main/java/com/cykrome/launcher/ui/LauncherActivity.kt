@@ -1931,7 +1931,8 @@ class LauncherActivity : AppCompatActivity() {
             
             // Method 2: Use reflection to call StatusBarManager.expandNotificationsPanel
             try {
-                val service = getSystemService(Context.STATUS_BAR_SERVICE)
+                @Suppress("WrongConstant")
+                val service = getSystemService("statusbar" as String) as? Any
                 if (service != null) {
                     val expandMethod = service.javaClass.getMethod("expandNotificationsPanel")
                     expandMethod.invoke(service)
@@ -2046,6 +2047,10 @@ class LauncherActivity : AppCompatActivity() {
             }
             findViewById<View>(R.id.appDrawerContainer).visibility == View.VISIBLE -> {
                 closeAppDrawer()
+            }
+            homeScreenFragment?.isCustomizationMode == true -> {
+                // Hide customization overlay if active
+                homeScreenFragment?.hideCustomizationOverlay()
             }
             else -> {
                 // Do nothing when back button is pressed on home screen
